@@ -23,3 +23,9 @@ __kernel void add_numbers(__global float4* data,
       group_result[get_group_id(0)] = sum;
    }
 }
+
+__kernel void darken(__global char3* input, __global char3* output) {
+
+   global_addr = get_global_id(0);
+   output[global_addr] = input[global_addr] / 2;
+}

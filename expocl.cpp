@@ -1,5 +1,3 @@
-#define PROGRAM_FILE "add_numbers.cl"
-#define KERNEL_FUNC "add_numbers"
 #define ARRAY_SIZE 64
 
 #include <cmath>
@@ -8,9 +6,11 @@
 #include <sstream>
 #include <fstream>
 #include <stdexcept>
+#include <memory>
 
 #include <vigra/impex.hxx>
 #include <vigra/stdimage.hxx>
+#include <vigra/transformimage.hxx>
 
 #define __CL_ENABLE_EXCEPTIONS
 #ifdef MAC
@@ -68,36 +68,108 @@ cl::Program build_program(cl::Context const& ctx, cl::Device dev, char const* fi
     return program;
 }
 
-int main(int argc, char const *argv[])
+void process(vigra::FRGBImage const& image)
 {
 
-    std::vector<vigra::BRGBImage> images;
 
-    // test commandline args
+}
+
+std::string basename(std::string const& path)
+{
+    std::cout << path.rfind('.') << std::endl;
+    return path.substr(0, path.rfind('.'));
+}
+
+std::shared_ptr< vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >>>
+loadImage(char const* path)
+{
+    typedef vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >> ImgType;
+    vigra::ImageImportInfo info(path);
+
+    if(info.isGrayscale())
+    {
+        throw std::runtime_error( "Could not open grayscale image. Only RGB images supported." );
+    }
+
+    // TODO: check pixel type is uint8
+
+    auto img = std::make_shared<ImgType>( info.width(), info.height() );
+
+    // import the image just read
+    importImage(info, destImage(*img));
+
+    return img;
+}
+
+struct OpenCLGPU
+{
+    cl::Device device;
+    cl::Context context;
+    cl::CommandQueue queue;
+
+    OpenCLGPU()
+    {
+        std::vector<cl::Device> devices;
+        create_devices(devices);
+        device = devices[0];
+
+        context = cl::Context(device);
+
+        queue = cl::CommandQueue(context, device);
+    }
+
+};
+
+template <typename InComponentType>
+void
+saveTiff16(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in, std::string const& outPath)
+{
+    typedef vigra::RGBValue< InComponentType > InPixelType;
+    typedef vigra::UInt16 OutComponentType;
+    typedef vigra::RGBValue< OutComponentType > OutPixelType;
+    typedef vigra::BasicImage< OutPixelType > OutImgType;
+
+    vigra::ImageExportInfo exportInfo(outPath.c_str());
+    exportInfo.setFileType("TIFF");
+    exportInfo.setPixelType("UINT16");
+    exportInfo.setCompression("LZW");
+
+    OutImgType out(in.width(), in.height());
+
+    // transform
+    vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
+            out.upperLeft(), out.accessor(),
+            vigra::linearRangeMapping(
+                InPixelType(vigra::NumericTraits<InComponentType>::min()),
+                InPixelType(vigra::NumericTraits<InComponentType>::max()),
+                OutPixelType(vigra::NumericTraits<OutComponentType>::min()),
+                OutPixelType(vigra::NumericTraits<OutComponentType>::max())
+                ));
+
+    // write the image to the file given as second argument
+    // the file type will be determined from the file name's extension
+    exportImage(srcImageRange(out), exportInfo);
+}
+
+int main(int argc, char const *argv[])
+{
+    // create device, context, and queue
+    OpenCLGPU gpu;
+
+    /* Build program */
+    cl::Program program = build_program(gpu.context, gpu.device, "expocl.cl");
+
+    // for each image on the commandline, pass through openCL
     for (int i = 1; i < argc; ++i) {
         std::cout << argv[i] << std::endl;
-        vigra::ImageImportInfo info(argv[i]);
+        auto in = loadImage(argv[i]);
 
-        if(info.isGrayscale())
-        {
-            std::cerr << "Grayscale image! DO NOT WANT!!!" << std::endl;
-            exit(1);
-        }
-        else
-        {
-            
-            // import the image just read
-            importImage(info,
-                        destImage(*images.insert(images.end(),
-                                                 vigra::BRGBImage(info.width(),
-                                                                  info.height()
-                                                                  ))));
-            
-            // write the image to the file given as second argument
-            // the file type will be determined from the file name's extension
-            //exportImage(srcImageRange(in), vigra::ImageExportInfo(argv[2]));
-        }
+        // modify with OpenCL
+        
+        std::string outPath(basename(argv[i]));
+        outPath += ".tiff";
 
+        saveTiff16(*in, outPath);
     }
 
     exit(0);
@@ -112,35 +184,22 @@ int main(int argc, char const *argv[])
         data[i] = 1.0f*i;
     }
 
-    /* Create device and context */
-    std::vector<cl::Device> devices;
-    create_devices(devices);
-    cl::Device const& device = devices[0];
-
-    cl::Context context(device);
-
-    /* Build program */
-    cl::Program program = build_program(context, device, PROGRAM_FILE);
-
     /* Create data buffer */
     size_t global_size = 8;
     size_t local_size = 4;
     num_groups = global_size/local_size;
 
-    cl::Buffer input_buffer(context,
+    cl::Buffer input_buffer(gpu.context,
             CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             ARRAY_SIZE * sizeof(float),
             data);
-    cl::Buffer sum_buffer(context,
+    cl::Buffer sum_buffer(gpu.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             num_groups * sizeof(float),
             sum);
 
-    /* Create a command queue */
-    cl::CommandQueue queue(context, device);
-
     /* Create a kernel */
-    cl::Kernel kernel(program, KERNEL_FUNC);
+    cl::Kernel kernel(program, "add_numbers");
 
     /* Create kernel arguments */
     kernel.setArg(0, input_buffer);
@@ -148,13 +207,13 @@ int main(int argc, char const *argv[])
     kernel.setArg(2, sum_buffer);
 
     /* Enqueue kernel */
-    queue.enqueueNDRangeKernel(kernel,
+    gpu.queue.enqueueNDRangeKernel(kernel,
                                cl::NullRange,
                                cl::NDRange(global_size),
                                cl::NDRange(local_size));
 
     /* Read the kernel's output */
-    queue.enqueueReadBuffer(sum_buffer, CL_TRUE, 0, sizeof(sum), sum);
+    gpu.queue.enqueueReadBuffer(sum_buffer, CL_TRUE, 0, sizeof(sum), sum);
 
     /* Check result */
     total = 0.0f;

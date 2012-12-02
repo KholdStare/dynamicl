@@ -1,8 +1,9 @@
 PROJ=expocl
 
-CC=g++
+CC=g++-4.7
 
-CFLAGS= -Wall -DUNIX -g -DDEBUG
+DEBUGFLAGS= -g -DDEBUG
+CFLAGS= -Wall -DUNIX -O3 -std=c++11
 
 # Check for 32-bit vs 64-bit
 PROC_TYPE = $(strip $(shell uname -m | grep 64))
