@@ -101,13 +101,13 @@ loadImage(char const* path)
     return img;
 }
 
-struct OpenCLGPU
+struct ComputeContext
 {
     cl::Device device;
     cl::Context context;
     cl::CommandQueue queue;
 
-    OpenCLGPU()
+    ComputeContext()
     {
         std::vector<cl::Device> devices;
         create_devices(devices);
@@ -120,11 +120,97 @@ struct OpenCLGPU
 
 };
 
+
 template <typename InComponentType>
-void
-saveTiff16(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in, std::string const& outPath)
+vigra::TinyVector<float, 4>
+convertPixelToFloat4(vigra::RGBValue< InComponentType > const& in)
 {
-    typedef vigra::RGBValue< InComponentType > InPixelType;
+    using namespace vigra;
+
+    const float inMax = static_cast<float>(NumericTraits<InComponentType>::max());
+
+    TinyVector<float, 4> out;
+    auto inIt = in.begin();
+    auto inEnd = in.end();
+    auto outIt = out.begin();
+    auto outEnd = out.end();
+
+    // copy values from input and scale
+    for (; ( inIt != inEnd ) && ( outIt != outEnd ); ++inIt, ++ outIt)
+    {
+        *outIt = static_cast<float>(*inIt) / inMax;
+    }
+
+    // fill any remaining values in output with ones
+    for (; outIt != outEnd; ++ outIt)
+    {
+        *outIt = 1.0f;
+    }
+
+    return out;
+}
+
+template <typename OutComponentType>
+vigra::RGBValue< OutComponentType >
+convertPixelFromFloat4(vigra::TinyVector<float, 4> const& in)
+{
+    using namespace vigra;
+
+    const float outMax = static_cast<float>(NumericTraits<OutComponentType>::max());
+
+    RGBValue< OutComponentType > out;
+    auto inIt = in.begin();
+    auto outIt = out.begin();
+    auto outEnd = out.end();
+
+    // copy values from input and scale
+    for (; outIt != outEnd; ++inIt, ++outIt)
+    {
+        *outIt = static_cast<OutComponentType>(*inIt * outMax);
+    }
+
+    return out;
+}
+
+template <typename InComponentType>
+std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
+transformToFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
+{
+    //typedef vigra::RGBValue< InComponentType > InPixelType;
+    typedef vigra::TinyVector< float, 4 > OutPixelType;
+    typedef vigra::BasicImage< OutPixelType > OutImgType;
+
+    // tranform into float4 pixel type
+    auto out = std::make_shared<OutImgType>(in.width(), in.height());
+
+    // transform
+    vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
+            out->upperLeft(), out->accessor(), convertPixelToFloat4<InComponentType>);
+
+    return out;
+}
+
+//template <typename OutComponentType>
+//std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
+//transformFromFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
+//{
+    ////typedef vigra::RGBValue< InComponentType > InPixelType;
+    //typedef vigra::TinyVector< float, 4 > OutPixelType;
+    //typedef vigra::BasicImage< OutPixelType > OutImgType;
+
+    //// tranform into float4 pixel type
+    //auto out = std::make_shared<OutImgType>(in.width(), in.height());
+
+    //// transform
+    //vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
+            //out->upperLeft(), out->accessor(), convertPixelToFloat4<InComponentType>);
+
+    //return out;
+//}
+
+void saveTiff16(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in, std::string const& outPath)
+{
+    typedef vigra::TinyVector< float, 4 > InPixelType;
     typedef vigra::UInt16 OutComponentType;
     typedef vigra::RGBValue< OutComponentType > OutPixelType;
     typedef vigra::BasicImage< OutPixelType > OutImgType;
@@ -139,22 +225,90 @@ saveTiff16(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in, std
     // transform
     vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
             out.upperLeft(), out.accessor(),
-            vigra::linearRangeMapping(
-                InPixelType(vigra::NumericTraits<InComponentType>::min()),
-                InPixelType(vigra::NumericTraits<InComponentType>::max()),
-                OutPixelType(vigra::NumericTraits<OutComponentType>::min()),
-                OutPixelType(vigra::NumericTraits<OutComponentType>::max())
-                ));
+            convertPixelFromFloat4<OutComponentType>);
 
     // write the image to the file given as second argument
     // the file type will be determined from the file name's extension
     exportImage(srcImageRange(out), exportInfo);
 }
 
+template <typename T>
+void printN(T const* array, size_t n)
+{
+    for (; n > 0; --n)
+    {
+        std::cout << static_cast<float>(*array++) << std::endl;
+    }
+}
+
+template <typename InComponentType>
+//std::shared_ptr< vigra::BasicImage< vigra::RGBValue< InComponentType >>>
+void
+transformWithKernel(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in,
+                   ComputeContext& gpu,
+                   cl::Kernel& kernel )
+{
+    const size_t pixelBytes = 3 * sizeof(InComponentType);
+    size_t totalBytes = in.width() * in.height() * pixelBytes;
+    totalBytes -= totalBytes % 4; // shrink so is multiple of 4
+
+    InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
+    std::cout << "In array:" << std::endl;
+    printN(inArray, 12);
+
+    // create buffers
+    cl::Buffer inputBuffer(gpu.context,
+            CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+            totalBytes,
+            const_cast<InComponentType*>(inArray));
+
+    InComponentType* outArray = new InComponentType[in.width() * in.height() * 3];
+
+    cl::Buffer outputBuffer(gpu.context,
+            CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
+            totalBytes,
+            outArray);
+
+    // set buffers as args
+    kernel.setArg(0, inputBuffer);
+    kernel.setArg(1, outputBuffer);
+
+    /* Enqueue kernel */
+    gpu.queue.enqueueNDRangeKernel(kernel,
+                               cl::NullRange,
+                               cl::NDRange(totalBytes/4),
+                               cl::NullRange);
+
+    /* Read the kernel's output */
+    gpu.queue.enqueueReadBuffer(outputBuffer, CL_TRUE, 0, totalBytes, outArray);
+
+    std::cout << "Out array:" << std::endl;
+    printN(outArray, 12);
+
+    delete[] outArray;
+}
+
+// Pipeline idea
+/*
+void pipeline()
+{
+    using namespace vigra;
+    BasicImage< RGBValue <InComponentType> > in = loadImage(path);
+
+    BasicImage< TinyVector<float, 4> > floatImage = toFloatRGBA(in);
+
+    BasicImage< TinyVector<float, 4> > hdrImage = openclProcessing(floatImage);
+
+    BasicImage< RGBValue <OutComponentType> > out = fromFloatRGBA(hdrImage);
+
+    saveImage(out);
+}
+*/
+
 int main(int argc, char const *argv[])
 {
     // create device, context, and queue
-    OpenCLGPU gpu;
+    ComputeContext gpu;
 
     /* Build program */
     cl::Program program = build_program(gpu.context, gpu.device, "expocl.cl");
@@ -162,70 +316,25 @@ int main(int argc, char const *argv[])
     // for each image on the commandline, pass through openCL
     for (int i = 1; i < argc; ++i) {
         std::cout << argv[i] << std::endl;
+        // load image from commandline
         auto in = loadImage(argv[i]);
 
+        // convert to float 4 pixel type
+        auto floatImage = transformToFloat4(*in);
+        auto const* floatArray = reinterpret_cast<float const*>(floatImage->data());
+        printN(floatArray, 20);
+
         // modify with OpenCL
+
+        /* Create a kernel */
+        //cl::Kernel darkenKernel(program, "darken");
+        //transformWithKernel(*in, gpu, darkenKernel);
         
         std::string outPath(basename(argv[i]));
         outPath += ".tiff";
 
-        saveTiff16(*in, outPath);
+        saveTiff16(*floatImage, outPath);
     }
-
-    exit(0);
-
-    /* Data and buffers */
-    float data[ARRAY_SIZE];
-    float sum[2], total, actual_sum;
-    cl_int num_groups;
-
-    /* Initialize data */
-    for(cl_int i = 0; i < ARRAY_SIZE; i++) {
-        data[i] = 1.0f*i;
-    }
-
-    /* Create data buffer */
-    size_t global_size = 8;
-    size_t local_size = 4;
-    num_groups = global_size/local_size;
-
-    cl::Buffer input_buffer(gpu.context,
-            CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-            ARRAY_SIZE * sizeof(float),
-            data);
-    cl::Buffer sum_buffer(gpu.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            num_groups * sizeof(float),
-            sum);
-
-    /* Create a kernel */
-    cl::Kernel kernel(program, "add_numbers");
-
-    /* Create kernel arguments */
-    kernel.setArg(0, input_buffer);
-    kernel.setArg(1, cl::Local(local_size * sizeof(float)));
-    kernel.setArg(2, sum_buffer);
-
-    /* Enqueue kernel */
-    gpu.queue.enqueueNDRangeKernel(kernel,
-                               cl::NullRange,
-                               cl::NDRange(global_size),
-                               cl::NDRange(local_size));
-
-    /* Read the kernel's output */
-    gpu.queue.enqueueReadBuffer(sum_buffer, CL_TRUE, 0, sizeof(sum), sum);
-
-    /* Check result */
-    total = 0.0f;
-    for(cl_int j = 0; j < num_groups; j++) {
-        total += sum[j];
-    }
-    actual_sum = 1.0f * ARRAY_SIZE/2*(ARRAY_SIZE-1);
-    printf("Computed sum = %.1f.\n", total);
-    if(fabs(total - actual_sum) > 0.01*fabs(actual_sum))
-        printf("Check failed.\n");
-    else
-        printf("Check passed.\n");
 
     return 0;
 }
