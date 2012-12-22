@@ -19,6 +19,8 @@
 #include <CL/cl.hpp>
 #endif
 
+#include "cl_errors.h"
+
 /* Find a GPU or CPU associated with the first available platform */
 void create_devices(std::vector<cl::Device>& devices)
 {
@@ -190,24 +192,6 @@ transformToFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& 
     return out;
 }
 
-//template <typename OutComponentType>
-//std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
-//transformFromFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
-//{
-    ////typedef vigra::RGBValue< InComponentType > InPixelType;
-    //typedef vigra::TinyVector< float, 4 > OutPixelType;
-    //typedef vigra::BasicImage< OutPixelType > OutImgType;
-
-    //// tranform into float4 pixel type
-    //auto out = std::make_shared<OutImgType>(in.width(), in.height());
-
-    //// transform
-    //vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
-            //out->upperLeft(), out->accessor(), convertPixelToFloat4<InComponentType>);
-
-    //return out;
-//}
-
 void saveTiff16(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in, std::string const& outPath)
 {
     typedef vigra::TinyVector< float, 4 > InPixelType;
@@ -241,51 +225,62 @@ void printN(T const* array, size_t n)
     }
 }
 
-template <typename InComponentType>
-//std::shared_ptr< vigra::BasicImage< vigra::RGBValue< InComponentType >>>
-void
-transformWithKernel(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in,
+std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
+transformWithKernel(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in,
                    ComputeContext& gpu,
                    cl::Kernel& kernel )
 {
-    const size_t pixelBytes = 3 * sizeof(InComponentType);
+    using namespace vigra;
+    typedef float InComponentType;
+    typedef TinyVector< InComponentType, 4 > PixelType;
+    typedef BasicImage< PixelType > ImageType;
+
+    const size_t pixelBytes = 4 * sizeof(InComponentType);
     size_t totalBytes = in.width() * in.height() * pixelBytes;
-    totalBytes -= totalBytes % 4; // shrink so is multiple of 4
 
     InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
     std::cout << "In array:" << std::endl;
     printN(inArray, 12);
 
-    // create buffers
+    // create input buffer from input image
+    // TODO: size may be too large for device
+    // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
     cl::Buffer inputBuffer(gpu.context,
             CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             totalBytes,
             const_cast<InComponentType*>(inArray));
 
-    InComponentType* outArray = new InComponentType[in.width() * in.height() * 3];
+    // Create new output image
+    auto outImg = std::make_shared<ImageType>( in.width(), in.height() );
+    InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
+    // Create a buffer in compute device for output image
     cl::Buffer outputBuffer(gpu.context,
             CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
             totalBytes,
-            outArray);
+            const_cast<InComponentType*>(outArray));
 
     // set buffers as args
     kernel.setArg(0, inputBuffer);
     kernel.setArg(1, outputBuffer);
 
-    /* Enqueue kernel */
+    // Enqueue kernel
     gpu.queue.enqueueNDRangeKernel(kernel,
                                cl::NullRange,
-                               cl::NDRange(totalBytes/4),
+                               cl::NDRange(totalBytes/pixelBytes),
                                cl::NullRange);
 
-    /* Read the kernel's output */
-    gpu.queue.enqueueReadBuffer(outputBuffer, CL_TRUE, 0, totalBytes, outArray);
+    // Read the kernel's output
+    gpu.queue.enqueueReadBuffer(outputBuffer,
+            CL_TRUE,
+            0,
+            totalBytes,
+            const_cast<InComponentType*>(outArray));
 
     std::cout << "Out array:" << std::endl;
     printN(outArray, 12);
 
-    delete[] outArray;
+    return outImg;
 }
 
 // Pipeline idea
@@ -314,7 +309,8 @@ int main(int argc, char const *argv[])
     cl::Program program = build_program(gpu.context, gpu.device, "expocl.cl");
 
     // for each image on the commandline, pass through openCL
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i)
+    {
         std::cout << argv[i] << std::endl;
         // load image from commandline
         auto in = loadImage(argv[i]);
@@ -325,10 +321,19 @@ int main(int argc, char const *argv[])
         printN(floatArray, 20);
 
         // modify with OpenCL
+        // Create a kernel 
+        cl::Kernel darkenKernel(program, "darken");
 
-        /* Create a kernel */
-        //cl::Kernel darkenKernel(program, "darken");
-        //transformWithKernel(*in, gpu, darkenKernel);
+        // try transforming
+        try
+        {
+            floatImage = transformWithKernel(*floatImage, gpu, darkenKernel);
+        }
+        catch (cl::Error& e)
+        {
+            std::cout << "Encountered OpenCL Error!\n" << e.what() << ": " << cl_error_to_str(e.err()) << std::endl;
+            exit(1);
+        }
         
         std::string outPath(basename(argv[i]));
         outPath += ".tiff";

@@ -24,7 +24,7 @@ __kernel void add_numbers(__global float4* data,
    }
 }
 
-__kernel void darken(__global uchar4* input, __global uchar4* output) {
+__kernel void darken(__global float4* input, __global float4* output) {
 
    uint global_addr = get_global_id(0);
    output[global_addr] = input[global_addr] / 2;
