@@ -1,9 +1,9 @@
-PROJ=expocl
+PROGS=expocl test_suite
 
 CC=g++-4.7
 
 DEBUGFLAGS= -g -DDEBUG
-CFLAGS= -Wall -Werror -DUNIX -O3 -std=c++11
+CFLAGS= -Wall -Werror -DUNIX -O3 -std=c++11 $(DEBUGFLAGS)
 
 # Check for 32-bit vs 64-bit
 PROC_TYPE = $(strip $(shell uname -m | grep 64))
@@ -24,34 +24,39 @@ ifneq ($(DARWIN),)
 	endif
 else
 
-# Linux OS
-LIBS=-lOpenCL -lvigraimpex
-ifeq ($(PROC_TYPE),)
-	CFLAGS+=-m32
-else
-	CFLAGS+=-m64
-endif
-
-# Check for Linux-AMD
-ifdef AMDAPPSDKROOT
-   INC_DIRS=. $(AMDAPPSDKROOT)/include
+	# Linux OS
+	LIBS=-lOpenCL -lvigraimpex
 	ifeq ($(PROC_TYPE),)
-		LIB_DIRS=$(AMDAPPSDKROOT)/lib/x86
+		CFLAGS+=-m32
 	else
-		LIB_DIRS=$(AMDAPPSDKROOT)/lib/x86_64
+		CFLAGS+=-m64
 	endif
-else
 
-# Check for Linux-Nvidia
-ifdef CUDA
-   INC_DIRS=. $(CUDA)/OpenCL/common/inc
+	# Check for Linux-AMD
+	ifdef AMDAPPSDKROOT
+		INC_DIRS=. $(AMDAPPSDKROOT)/include
+		ifeq ($(PROC_TYPE),)
+			LIB_DIRS=$(AMDAPPSDKROOT)/lib/x86
+		else
+			LIB_DIRS=$(AMDAPPSDKROOT)/lib/x86_64
+		endif
+	else
+
+	# Check for Linux-Nvidia
+	ifdef CUDA
+		INC_DIRS=. $(CUDA)/OpenCL/common/inc
+	endif
+
+	endif
 endif
 
-endif
-endif
+LIBS+= -lpthread -lboost_unit_test_framework
+SRCS=utils.cpp
 
-$(PROJ): $(PROJ).cpp
-	$(CC) $(CFLAGS) -o $@ $^ $(INC_DIRS:%=-I%) $(LIB_DIRS:%=-L%) $(LIBS)
+all: $(PROGS)
+ 
+%: %.cpp
+	$(CC) $(CFLAGS) -o $@ $^ $(SRCS) $(INC_DIRS:%=-I%) $(LIB_DIRS:%=-L%) $(LIBS)
 
 .PHONY: clean
 

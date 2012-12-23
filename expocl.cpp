@@ -19,7 +19,8 @@
 #include <CL/cl.hpp>
 #endif
 
-#include "cl_errors.h"
+#include "cl_utils.h"
+#include "utils.h"
 
 /* Find a GPU or CPU associated with the first available platform */
 void create_devices(std::vector<cl::Device>& devices)
@@ -39,7 +40,8 @@ void create_devices(std::vector<cl::Device>& devices)
     }
 }
 
-std::string slurp(std::ifstream const& in) {
+std::string slurp(std::ifstream const& in)
+{
     if (!in.good()) {
         throw std::runtime_error("Could not read from input file stream.");
     }
@@ -49,7 +51,8 @@ std::string slurp(std::ifstream const& in) {
 }
 
 /* Create program from a file and compile it */
-cl::Program build_program(cl::Context const& ctx, cl::Device dev, char const* filename) {
+cl::Program build_program(cl::Context const& ctx, cl::Device dev, char const* filename)
+{
 
     /* Read program file and place content into buffer */
     std::string program_source = slurp(std::ifstream(filename));
@@ -68,18 +71,6 @@ cl::Program build_program(cl::Context const& ctx, cl::Device dev, char const* fi
     }
 
     return program;
-}
-
-void process(vigra::FRGBImage const& image)
-{
-
-
-}
-
-std::string basename(std::string const& path)
-{
-    std::cout << path.rfind('.') << std::endl;
-    return path.substr(0, path.rfind('.'));
 }
 
 std::shared_ptr< vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >>>
@@ -114,6 +105,8 @@ struct ComputeContext
         std::vector<cl::Device> devices;
         create_devices(devices);
         device = devices[0];
+        
+        // TODO: find device capabilities
 
         context = cl::Context(device);
 
@@ -178,14 +171,13 @@ template <typename InComponentType>
 std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
 transformToFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
 {
-    //typedef vigra::RGBValue< InComponentType > InPixelType;
     typedef vigra::TinyVector< float, 4 > OutPixelType;
     typedef vigra::BasicImage< OutPixelType > OutImgType;
 
-    // tranform into float4 pixel type
+    // Create output image
     auto out = std::make_shared<OutImgType>(in.width(), in.height());
 
-    // transform
+    // transform using unary function
     vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
             out->upperLeft(), out->accessor(), convertPixelToFloat4<InComponentType>);
 
@@ -335,7 +327,7 @@ int main(int argc, char const *argv[])
             exit(1);
         }
         
-        std::string outPath(basename(argv[i]));
+        std::string outPath(DynamiCL::stripExtension(argv[i]));
         outPath += ".tiff";
 
         saveTiff16(*floatImage, outPath);
