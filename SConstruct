@@ -17,5 +17,12 @@ if os.environ['AMDAPPSDKROOT']:
     env.Append(CPPPATH = [ sdkroot + '/include' ])
     env.Append(LIBPATH = [ sdkroot + '/lib/' + bits ])
 
-env.Program(target = 'expocl', source = ['expocl.cpp', 'utils.cpp'])
-env.Program(target = 'test_suite', source = ['test_suite.cpp', 'utils.cpp'])
+commonSource = ['utils.cpp']
+mainSource = ['expocl.cpp', 'cl_utils.cpp']
+testSource = ['test_suite.cpp']
+
+mainSource.extend(commonSource)
+testSource.extend(commonSource)
+
+env.Program(target = 'expocl', source = mainSource)
+env.Program(target = 'test_suite', source = testSource)
