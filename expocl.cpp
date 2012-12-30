@@ -139,6 +139,11 @@ namespace DynamiCL
         }
     }
 
+    inline size_t halveDimension(size_t n)
+    {
+        return (n + 1) / 2;
+    }
+
     std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
     transformWithKernel(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in,
                        ComputeContext& gpu,
@@ -149,10 +154,7 @@ namespace DynamiCL
         typedef TinyVector< InComponentType, 4 > PixelType;
         typedef BasicImage< PixelType > ImageType;
 
-
-        //const size_t pixelBytes = 4 * sizeof(InComponentType);
-        //size_t totalBytes = in.width() * in.height() * pixelBytes;
-
+        // get raw component array from input image
         InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
         std::cout << "In array:" << std::endl;
         printN(inArray, 12);
@@ -169,10 +171,11 @@ namespace DynamiCL
                 const_cast<InComponentType*>(inArray));
 
         // Create an intermediate image in compute device
+        size_t halfWidth = halveDimension(in.width());
         cl::Image2D interImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in.width(),
+                halfWidth,
                 in.height());
 
         // Kernel for downsampling rows
@@ -181,17 +184,21 @@ namespace DynamiCL
         rowKernel.setArg(1, interImage);
 
         // Enqueue row kernel
+        cl::Event rowComplete;
         gpu.queue.enqueueNDRangeKernel(rowKernel,
                                    cl::NullRange,
-                                   cl::NDRange(in.width(), in.height()),
-                                   cl::NullRange);
+                                   cl::NDRange(halfWidth, in.height()),
+                                   cl::NullRange,
+                                   nullptr,
+                                   &rowComplete);
 
         // Create an output image in compute device
+        size_t halfHeight = halveDimension(in.height());
         cl::Image2D outputImage(gpu.context,
                 CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in.width(),
-                in.height());
+                halfWidth,
+                halfHeight);
 
         // Kernel for downsampling columns
         cl::Kernel colKernel(program, "downsample_col");
@@ -199,23 +206,29 @@ namespace DynamiCL
         colKernel.setArg(1, outputImage);
 
         // Enqueue col kernel
+        std::vector<cl::Event> waitfor = {rowComplete};
+        cl::Event colComplete;
         gpu.queue.enqueueNDRangeKernel(colKernel,
                                    cl::NullRange,
-                                   cl::NDRange(in.width(), in.height()),
-                                   cl::NullRange);
+                                   cl::NDRange(halfWidth, halfHeight),
+                                   cl::NullRange, 
+                                   &waitfor,
+                                   &colComplete);
 
         // Create new output vigra image
-        auto outImg = std::make_shared<ImageType>( in.width(), in.height() );
+        auto outImg = std::make_shared<ImageType>( halfWidth, halfHeight );
         InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
         // Read the kernel's output
+        waitfor[0] = colComplete;
         gpu.queue.enqueueReadImage(outputImage,
                 CL_TRUE,
                 VectorConstructor<size_t>::construct(0, 0, 0),
-                VectorConstructor<size_t>::construct(in.width(), in.height(), 1),
+                VectorConstructor<size_t>::construct(outImg->width(), outImg->height(), 1),
                 0,
                 0,
-                const_cast<InComponentType*>(outArray));
+                const_cast<InComponentType*>(outArray),
+                &waitfor);
 
         std::cout << "Out array:" << std::endl;
         printN(outArray, 12);
