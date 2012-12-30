@@ -39,7 +39,7 @@ namespace DynamiCL
     }
 
     template <typename InComponentType>
-    vigra::TinyVector<float, 4>
+    inline vigra::TinyVector<float, 4>
     convertPixelToFloat4(vigra::RGBValue< InComponentType > const& in)
     {
         using namespace vigra;
@@ -116,7 +116,7 @@ namespace DynamiCL
         vigra::ImageExportInfo exportInfo(outPath.c_str());
         exportInfo.setFileType("TIFF");
         exportInfo.setPixelType("UINT16");
-        exportInfo.setCompression("LZW");
+        //exportInfo.setCompression("LZW");
 
         OutImgType out(in.width(), in.height());
 
@@ -142,15 +142,16 @@ namespace DynamiCL
     std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
     transformWithKernel(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in,
                        ComputeContext& gpu,
-                       cl::Kernel& kernel )
+                       cl::Program& program )
     {
         using namespace vigra;
         typedef float InComponentType;
         typedef TinyVector< InComponentType, 4 > PixelType;
         typedef BasicImage< PixelType > ImageType;
 
-        const size_t pixelBytes = 4 * sizeof(InComponentType);
-        size_t totalBytes = in.width() * in.height() * pixelBytes;
+
+        //const size_t pixelBytes = 4 * sizeof(InComponentType);
+        //size_t totalBytes = in.width() * in.height() * pixelBytes;
 
         InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
         std::cout << "In array:" << std::endl;
@@ -159,36 +160,61 @@ namespace DynamiCL
         // create input buffer from input image
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
-        cl::Buffer inputBuffer(gpu.context,
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                totalBytes,
+        cl::Image2D inputImage(gpu.context,
+                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR | CL_MEM_HOST_WRITE_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in.width(),
+                in.height(),
+                0,
                 const_cast<InComponentType*>(inArray));
 
-        // Create new output image
+        // Create an intermediate image in compute device
+        cl::Image2D interImage(gpu.context,
+                CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in.width(),
+                in.height());
+
+        // Kernel for downsampling rows
+        cl::Kernel rowKernel(program, "downsample_row");
+        rowKernel.setArg(0, inputImage);
+        rowKernel.setArg(1, interImage);
+
+        // Enqueue row kernel
+        gpu.queue.enqueueNDRangeKernel(rowKernel,
+                                   cl::NullRange,
+                                   cl::NDRange(in.width(), in.height()),
+                                   cl::NullRange);
+
+        // Create an output image in compute device
+        cl::Image2D outputImage(gpu.context,
+                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in.width(),
+                in.height());
+
+        // Kernel for downsampling columns
+        cl::Kernel colKernel(program, "downsample_col");
+        colKernel.setArg(0, interImage);
+        colKernel.setArg(1, outputImage);
+
+        // Enqueue col kernel
+        gpu.queue.enqueueNDRangeKernel(colKernel,
+                                   cl::NullRange,
+                                   cl::NDRange(in.width(), in.height()),
+                                   cl::NullRange);
+
+        // Create new output vigra image
         auto outImg = std::make_shared<ImageType>( in.width(), in.height() );
         InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
-        // Create a buffer in compute device for output image
-        cl::Buffer outputBuffer(gpu.context,
-                CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
-                totalBytes,
-                const_cast<InComponentType*>(outArray));
-
-        // set buffers as args
-        kernel.setArg(0, inputBuffer);
-        kernel.setArg(1, outputBuffer);
-
-        // Enqueue kernel
-        gpu.queue.enqueueNDRangeKernel(kernel,
-                                   cl::NullRange,
-                                   cl::NDRange(totalBytes/pixelBytes),
-                                   cl::NullRange);
-
         // Read the kernel's output
-        gpu.queue.enqueueReadBuffer(outputBuffer,
+        gpu.queue.enqueueReadImage(outputImage,
                 CL_TRUE,
+                VectorConstructor<size_t>::construct(0, 0, 0),
+                VectorConstructor<size_t>::construct(in.width(), in.height(), 1),
                 0,
-                totalBytes,
+                0,
                 const_cast<InComponentType*>(outArray));
 
         std::cout << "Out array:" << std::endl;
@@ -242,8 +268,8 @@ int main(int argc, char const *argv[])
     auto processImage =
         [&]( std::shared_ptr<FloatImage> im )
         {
-            cl::Kernel darkenKernel(program, "darken");
-            return transformWithKernel(*im, gpu, darkenKernel);
+            //cl::Kernel darkenKernel(program, "darkenImage");
+            return transformWithKernel(*im, gpu, program);
         };
 
     int currentIndex = 1;
@@ -273,39 +299,6 @@ int main(int argc, char const *argv[])
         std::cout << "Encountered OpenCL Error!\n" << e.what() << ": " << clErrorToStr(e.err()) << std::endl;
         exit(1);
     }
-
-    // for each image on the commandline, pass through openCL
-    //for (int i = 1; i < argc; ++i)
-    //{
-        //std::cout << argv[i] << std::endl;
-        //// load image from commandline
-        //auto in = loadImage(argv[i]);
-
-        //// convert to float 4 pixel type
-        //auto floatImage = transformToFloat4(*in);
-        //auto const* floatArray = reinterpret_cast<float const*>(floatImage->data());
-        //printN(floatArray, 20);
-
-        //// modify with OpenCL
-        //// Create a kernel 
-        //cl::Kernel darkenKernel(program, "darken");
-
-        //// try transforming
-        //try
-        //{
-            //floatImage = transformWithKernel(*floatImage, gpu, darkenKernel);
-        //}
-        //catch (cl::Error& e)
-        //{
-            //std::cout << "Encountered OpenCL Error!\n" << e.what() << ": " << clErrorToStr(e.err()) << std::endl;
-            //exit(1);
-        //}
-        
-        //std::string outPath(DynamiCL::stripExtension(argv[i]));
-        //outPath += ".tiff";
-
-        //saveTiff16(*floatImage, outPath);
-    //}
 
     return 0;
 }

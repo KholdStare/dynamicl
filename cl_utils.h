@@ -42,6 +42,52 @@ namespace DynamiCL
     /* Create program from a file and compile it */
     cl::Program buildProgram(cl::Context const& ctx, cl::Device dev, char const* filename);
 
+    namespace detail
+    {
+        template<typename Vec>
+        void
+        vector_constructor_impl(Vec& vec)
+        { }
+
+        template<typename Vec, typename U, typename... Us>
+        void
+        vector_constructor_impl(Vec& vec, U&& first, Us&&... rest)
+        {
+            vec.push_back(std::forward<U>(first));
+            vector_constructor_impl(vec, std::forward<Us>(rest)...);
+        }
+
+    }
+
+    template <typename T>
+    struct VectorConstructor
+    {
+
+        template <typename... Ts>
+        static cl::vector<T, sizeof...(Ts)>
+        construct(Ts&&... args)
+        {
+            cl::vector<T, sizeof...(Ts)> vec;
+            detail::vector_constructor_impl(vec, std::forward<Ts>(args)...);
+            return vec;
+        }
+
+    };
+
+    template <>
+    struct VectorConstructor<typename ::size_t>
+    {
+
+        template <typename... Ts>
+        static cl::size_t<sizeof...(Ts)>
+        construct(Ts&&... args)
+        {
+            cl::size_t<sizeof...(Ts)> vec;
+            detail::vector_constructor_impl(vec, std::forward<Ts>(args)...);
+            return vec;
+        }
+
+    };
 }
 
 #endif /* end of include guard: CL_ERRORS_H_GTNVZIRP */
