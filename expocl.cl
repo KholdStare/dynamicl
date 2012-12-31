@@ -1,28 +1,6 @@
-__kernel void add_numbers(__global float4* data, 
-      __local float* local_result, __global float* group_result) {
-
-   float sum;
-   float4 input1, input2, sum_vector;
-   uint global_addr, local_addr;
-
-   global_addr = get_global_id(0) * 2;
-   input1 = data[global_addr];
-   input2 = data[global_addr+1];
-   sum_vector = input1 + input2;
-
-   local_addr = get_local_id(0);
-   local_result[local_addr] = sum_vector.s0 + sum_vector.s1 + 
-                              sum_vector.s2 + sum_vector.s3; 
-   barrier(CLK_LOCAL_MEM_FENCE);
-
-   if(get_local_id(0) == 0) {
-      sum = 0.0f;
-      for(int i=0; i<get_local_size(0); i++) {
-         sum += local_result[i];
-      }
-      group_result[get_group_id(0)] = sum;
-   }
-}
+// try mirrored?
+__constant const sampler_t g_sampler =
+        CLK_FILTER_NEAREST|CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE;
 
 __kernel void darken(__global float4* input, __global float4* output)
 {
@@ -32,13 +10,9 @@ __kernel void darken(__global float4* input, __global float4* output)
 
 __kernel void darkenImage(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
-    // try mirrored?
-    const sampler_t sampler =
-        CLK_FILTER_NEAREST|CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE;
-
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
 
-    float4 val = read_imagef (input_image, sampler, coord) / 2;
+    float4 val = read_imagef (input_image, g_sampler, coord) / 2;
 
     write_imagef (output_image, coord, val);
 }
@@ -55,17 +29,13 @@ __constant const float sampling_kernel[5] = {
 __attribute__(( vec_type_hint (float4)))
 __kernel void downsample_row(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
-    // try mirrored?
-    const sampler_t sampler =
-        CLK_FILTER_NEAREST|CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE;
-
     int2 out_coord = (int2)( get_global_id(0), get_global_id(1) );
     int2 in_coord = (int2)( out_coord.x * 2, out_coord.y );
 
     float4 sample = 0.0f;
     for (int i = -2; i < 3; ++i)
     {
-        sample += read_imagef (input_image, sampler, in_coord+(int2)(i, 0)) * sampling_kernel[2+i];
+        sample += read_imagef (input_image, g_sampler, in_coord+(int2)(i, 0)) * sampling_kernel[2+i];
     }
 
     write_imagef (output_image, out_coord, sample);
@@ -75,20 +45,95 @@ __attribute__(( vec_type_hint (float4)))
 __kernel void downsample_col(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
 
-    // try mirrored?
-    const sampler_t sampler =
-        CLK_FILTER_NEAREST|CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE;
-
     int2 out_coord = (int2)( get_global_id(0), get_global_id(1) );
     int2 in_coord = (int2)( out_coord.x, out_coord.y * 2 );
 
     float4 sample = 0.0f;
     for (int i = -2; i < 3; ++i)
     {
-        sample += read_imagef (input_image, sampler, in_coord+(int2)(0, i)) * sampling_kernel[2+i];
+        sample += read_imagef (input_image, g_sampler, in_coord+(int2)(0, i)) * sampling_kernel[2+i];
     }
 
     write_imagef (output_image, out_coord, sample);
+}
+
+/**
+ * Create two pixels at once, while upsamling.
+ * Dimensions of problem are same as input image.
+ * Corner case arises when output has odd num of pixels.
+ */
+__kernel void upsample_col(__read_only image2d_t input_image, __write_only image2d_t output_image)
+{
+    int2 out_dim = get_image_dim(output_image);
+
+    int2 in_coord = (int2)( get_global_id(0), get_global_id(1) );
+    int2 out_coord = (int2)( in_coord.x, in_coord.y * 2 );
+
+    // the 3 input pixels that contribute to the two pixels in output
+    float4 in0 = read_imagef (input_image, g_sampler, in_coord+(int2)(0, -1));
+    float4 in1 = read_imagef (input_image, g_sampler, in_coord+(int2)(0, 0));
+    float4 in2 = read_imagef (input_image, g_sampler, in_coord+(int2)(0, 1));
+
+    // coefficients are derived from how much the output pixel
+    // contributed before in the downsampling step
+    float4 out0 = (   in0 * sampling_kernel[0]
+                    + in1 * sampling_kernel[2]
+                    + in2 * sampling_kernel[0])
+                  * 2;
+
+    float4 out1 = (   in1 * sampling_kernel[1]
+                    + in2 * sampling_kernel[1])
+                  * 2;
+
+    write_imagef (output_image, out_coord, out0);
+
+    // corner case when output has odd number of pixels.
+    // do not write out the second output pixel
+    // TODO investigate impact of divergence
+    if ((out_dim.y % 2 != 0)
+        && out_coord.y == out_dim.y - 1)
+    {
+        return;
+    }
+
+    write_imagef (output_image, out_coord+(int2)(0,1), out1);
+}
+
+__kernel void upsample_row(__read_only image2d_t input_image, __write_only image2d_t output_image)
+{
+    int2 out_dim = get_image_dim(output_image);
+
+    int2 in_coord = (int2)( get_global_id(0), get_global_id(1) );
+    int2 out_coord = (int2)( in_coord.x * 2, in_coord.y);
+
+    // the 3 input pixels that contribute to the two pixels in output
+    float4 in0 = read_imagef (input_image, g_sampler, in_coord+(int2)(-1, 0));
+    float4 in1 = read_imagef (input_image, g_sampler, in_coord+(int2)(0, 0));
+    float4 in2 = read_imagef (input_image, g_sampler, in_coord+(int2)(1, 0));
+
+    // coefficients are derived from how much the output pixel
+    // contributed before in the downsampling step
+    float4 out0 = (   in0 * sampling_kernel[0]
+                    + in1 * sampling_kernel[2]
+                    + in2 * sampling_kernel[0])
+                  * 2;
+
+    float4 out1 = (   in1 * sampling_kernel[1]
+                    + in2 * sampling_kernel[1])
+                  * 2;
+
+    write_imagef (output_image, out_coord, out0);
+
+    // corner case when output has odd number of pixels.
+    // do not write out the second output pixel
+    // TODO investigate impact of divergence
+    if ((out_dim.x % 2 != 0)
+        && out_coord.x == out_dim.x - 1)
+    {
+        return;
+    }
+
+    write_imagef (output_image, out_coord+(int2)(1,0), out1);
 }
 
 /***************************************************************************
@@ -126,9 +171,6 @@ __constant const float discreet_laplacian[3][3] = {
 
 __kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
-    const sampler_t sampler =
-        CLK_FILTER_NEAREST|CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE;
-
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
 
     // find laplacian at pixel per component
@@ -137,7 +179,7 @@ __kernel void compute_quality(__read_only image2d_t input_image, __write_only im
     {
         for (int j = -1; j < 2; ++j)
         {
-            laplacian += read_imagef (input_image, sampler, coord+(int2)(i, j) )
+            laplacian += read_imagef (input_image, g_sampler, coord+(int2)(i, j) )
                              * discreet_laplacian[1+i][1+j];
         }
     }
@@ -147,7 +189,7 @@ __kernel void compute_quality(__read_only image2d_t input_image, __write_only im
     // TODO benefits to fast_length?
     float laplacian_measure = fast_length(fabs(laplacian));
 
-    float4 pixel = read_imagef (input_image, sampler, coord);
+    float4 pixel = read_imagef (input_image, g_sampler, coord);
 
     // assign quality measure to alpha channel
     pixel.s3 = sigma_squared_rgb(pixel)

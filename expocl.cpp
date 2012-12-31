@@ -16,6 +16,7 @@
 
 namespace DynamiCL
 {
+    typedef vigra::BasicImage< vigra::TinyVector< float, 4 >> FloatImage;
         
     std::shared_ptr< vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >>>
     loadImage(std::string const& path)
@@ -90,14 +91,13 @@ namespace DynamiCL
     }
 
     template <typename InComponentType>
-    std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
+    std::shared_ptr< FloatImage >
     transformToFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
     {
         typedef vigra::TinyVector< float, 4 > OutPixelType;
-        typedef vigra::BasicImage< OutPixelType > OutImgType;
 
         // Create output image
-        auto out = std::make_shared<OutImgType>(in.width(), in.height());
+        auto out = std::make_shared<FloatImage>(in.width(), in.height());
 
         // transform using unary function
         vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
@@ -106,7 +106,7 @@ namespace DynamiCL
         return out;
     }
 
-    void saveTiff16(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in, std::string const& outPath)
+    void saveTiff16(FloatImage const& in, std::string const& outPath)
     {
         typedef vigra::TinyVector< float, 4 > InPixelType;
         typedef vigra::UInt16 OutComponentType;
@@ -169,8 +169,8 @@ namespace DynamiCL
                                    //&rowComplete);
     //}
 
-    std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
-    transformWithKernel(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in,
+    std::shared_ptr< FloatImage >
+    transformWithKernel( std::shared_ptr< FloatImage > in,
                        ComputeContext& gpu,
                        cl::Program& program )
     {
@@ -180,7 +180,7 @@ namespace DynamiCL
         typedef BasicImage< PixelType > ImageType;
 
         // get raw component array from input image
-        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
+        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->data());
         std::cout << "In array:" << std::endl;
         printN(inArray, 12);
 
@@ -192,20 +192,20 @@ namespace DynamiCL
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
         cl::Image2D inputImage(gpu.context,
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR | CL_MEM_HOST_WRITE_ONLY,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in.width(),
-                in.height(),
+                in->width(),
+                in->height(),
                 0,
                 const_cast<InComponentType*>(inArray));
 
         // Create an intermediate image in compute device
-        size_t halfWidth = halveDimension(in.width());
+        size_t halfWidth = halveDimension(in->width());
         cl::Image2D interImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
                 halfWidth,
-                in.height());
+                in->height());
 
         // Kernel for downsampling rows
         cl::Kernel rowKernel(program, "downsample_row");
@@ -216,7 +216,7 @@ namespace DynamiCL
         cl::Event rowComplete;
         gpu.queue.enqueueNDRangeKernel(rowKernel,
                                    cl::NullRange,
-                                   cl::NDRange(halfWidth, in.height()),
+                                   cl::NDRange(halfWidth, in->height()),
                                    cl::NullRange,
                                    nullptr,
                                    &rowComplete);
@@ -226,9 +226,9 @@ namespace DynamiCL
          ********************/
 
         // Create an output image in compute device
-        size_t halfHeight = halveDimension(in.height());
+        size_t halfHeight = halveDimension(in->height());
         cl::Image2D outputImage(gpu.context,
-                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
                 halfWidth,
                 halfHeight);
@@ -248,33 +248,71 @@ namespace DynamiCL
                                    &waitfor,
                                    &colComplete);
 
+        /******************
+         *  Upsample col  *
+         ******************/
+
+        // Kernel for downsampling columns
+        cl::Kernel upcolKernel(program, "upsample_col");
+        upcolKernel.setArg(0, outputImage);
+        upcolKernel.setArg(1, interImage);
+
+        // Enqueue col kernel
+        waitfor[0] = colComplete;
+        cl::Event upcolComplete;
+        gpu.queue.enqueueNDRangeKernel(upcolKernel,
+                                   cl::NullRange,
+                                   cl::NDRange(halfWidth, halfHeight),
+                                   cl::NullRange, 
+                                   &waitfor,
+                                   &upcolComplete);
+
+        /******************
+         *  Upsample row  *
+         ******************/
+
+        // Kernel for downsampling columns
+        cl::Kernel uprowKernel(program, "upsample_row");
+        uprowKernel.setArg(0, interImage);
+        uprowKernel.setArg(1, inputImage);
+
+        // Enqueue col kernel
+        waitfor[0] = upcolComplete;
+        cl::Event uprowComplete;
+        gpu.queue.enqueueNDRangeKernel(uprowKernel,
+                                   cl::NullRange,
+                                   cl::NDRange(halfWidth, in->height()),
+                                   cl::NullRange, 
+                                   &waitfor,
+                                   &uprowComplete);
+
         /***********************
          *  Read final output  *
          ***********************/
 
-        // Create new output vigra image
-        auto outImg = std::make_shared<ImageType>( halfWidth, halfHeight );
-        InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
+        //// Create new output vigra image
+        //auto outImg = std::make_shared<ImageType>( in->width(), in->height() );
+        //InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
         // Read the kernel's output
-        waitfor[0] = colComplete;
-        gpu.queue.enqueueReadImage(outputImage,
+        waitfor[0] = uprowComplete;
+        gpu.queue.enqueueReadImage(inputImage,
                 CL_TRUE,
                 VectorConstructor<size_t>::construct(0, 0, 0),
-                VectorConstructor<size_t>::construct(outImg->width(), outImg->height(), 1),
+                VectorConstructor<size_t>::construct(in->width(), in->height(), 1),
                 0,
                 0,
-                const_cast<InComponentType*>(outArray),
+                const_cast<InComponentType*>(inArray),
                 &waitfor);
 
         std::cout << "Out array:" << std::endl;
-        printN(outArray, 12);
+        printN(inArray, 12);
 
-        return outImg;
+        return in;
     }
 
-    std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
-    calculateQualityCL(std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>> in,
+    std::shared_ptr< FloatImage >
+    calculateQualityCL(std::shared_ptr< FloatImage > in,
                        ComputeContext& gpu,
                        cl::Program& program )
     {
@@ -354,9 +392,6 @@ int main(int argc, char const *argv[])
     std::vector<std::string> paths;
     std::copy_n( &argv[1], argc-1, std::back_inserter(paths) );
 
-    typedef vigra::BasicImage< vigra::TinyVector< float, 4 >> FloatImage;
-    //typedef vigra::BasicImage< vigra::TinyVector< float, 4 >> RGBImage;
-
     auto transformImage =
         [&]( std::shared_ptr<vigra::BRGBImage> im )
         {
@@ -372,7 +407,7 @@ int main(int argc, char const *argv[])
     auto constructPyramid =
         [&]( std::shared_ptr<FloatImage> im )
         {
-            return transformWithKernel(*im, gpu, program);
+            return transformWithKernel(im, gpu, program);
         };
 
     int currentIndex = 1;
