@@ -52,6 +52,7 @@ __constant const float sampling_kernel[5] = {
     01.f/16.f, 04.f/16.f, 06.f/16.f, 04.f/16.f, 01.f/16.f
 };
 
+__attribute__(( vec_type_hint (float4)))
 __kernel void downsample_row(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     // try mirrored?
@@ -70,6 +71,7 @@ __kernel void downsample_row(__read_only image2d_t input_image, __write_only ima
     write_imagef (output_image, out_coord, sample);
 }
 
+__attribute__(( vec_type_hint (float4)))
 __kernel void downsample_col(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
 
@@ -115,10 +117,12 @@ float well_exposedness(float4 pixel)
     return component_wise.s0 * component_wise.s1 * component_wise.s2;
 }
 
-float quality(float4 pixel)
-{
-    return sigma_squared_rgb(pixel) * well_exposedness(pixel);
-}
+// part of quality measure.
+__constant const float discreet_laplacian[3][3] = {
+    0.5f/6.f, 1.f/6.f, 0.5f/6.f,
+     1.f/6.f,   1.f,   1.f/6.f,
+    0.5f/6.f, 1.f/6.f, 0.5f/6.f
+};
 
 __kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
@@ -127,10 +131,29 @@ __kernel void compute_quality(__read_only image2d_t input_image, __write_only im
 
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
 
+    // find laplacian at pixel per component
+    float4 laplacian = 0.0f;
+    for (int i = -1; i < 2; ++i)
+    {
+        for (int j = -1; j < 2; ++j)
+        {
+            laplacian += read_imagef (input_image, sampler, coord+(int2)(i, j) )
+                             * discreet_laplacian[1+i][1+j];
+        }
+    }
+
+    // laplacian of alpha channel will be zero.
+    // to average across channels, just get length of vector
+    // TODO benefits to fast_length?
+    float laplacian_measure = fast_length(fabs(laplacian));
+
     float4 pixel = read_imagef (input_image, sampler, coord);
 
     // assign quality measure to alpha channel
-    pixel.s3 = quality(pixel) * 100;
+    pixel.s3 = sigma_squared_rgb(pixel)
+                * well_exposedness(pixel)
+                * laplacian_measure
+                * 50;
 
     write_imagef (output_image, coord, pixel);
 }
