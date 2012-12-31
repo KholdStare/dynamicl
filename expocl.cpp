@@ -80,10 +80,10 @@ namespace DynamiCL
         auto outIt = out.begin();
         auto outEnd = out.end();
 
-        // copy values from input and scale
+        // copy values from input, apply alpha, and scale
         for (; outIt != outEnd; ++inIt, ++outIt)
         {
-            *outIt = static_cast<OutComponentType>(*inIt * outMax);
+            *outIt = static_cast<OutComponentType>(*inIt * outMax * in[3]);
         }
 
         return out;
@@ -236,22 +236,74 @@ namespace DynamiCL
         return outImg;
     }
 
-    // Pipeline idea
-    /*
-    void pipeline()
+    std::shared_ptr< vigra::BasicImage< vigra::TinyVector< float, 4 >>>
+    calculateQualityCL(vigra::BasicImage< vigra::TinyVector< float, 4 >> const& in,
+                       ComputeContext& gpu,
+                       cl::Program& program )
     {
         using namespace vigra;
-        BasicImage< RGBValue <InComponentType> > in = loadImage(path);
+        typedef float InComponentType;
+        typedef TinyVector< InComponentType, 4 > PixelType;
+        typedef BasicImage< PixelType > ImageType;
 
-        BasicImage< TinyVector<float, 4> > floatImage = toFloatRGBA(in);
+        // get raw component array from input image
+        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in.data());
+        std::cout << "In array:" << std::endl;
+        printN(inArray, 12);
 
-        BasicImage< TinyVector<float, 4> > hdrImage = openclProcessing(floatImage);
+        // create input buffer from input image
+        // TODO: size may be too large for device
+        // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
+        cl::Image2D inputImage(gpu.context,
+                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR | CL_MEM_HOST_WRITE_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in.width(),
+                in.height(),
+                0,
+                const_cast<InComponentType*>(inArray));
 
-        BasicImage< RGBValue <OutComponentType> > out = fromFloatRGBA(hdrImage);
+        // Create an output image in compute device
+        cl::Image2D outputImage(gpu.context,
+                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in.width(),
+                in.height());
 
-        saveImage(out);
+        // Kernel for downsampling columns
+        cl::Kernel qualityKernel(program, "compute_quality");
+        qualityKernel.setArg(0, inputImage);
+        qualityKernel.setArg(1, outputImage);
+
+        // Enqueue col kernel
+        cl::Event kernelComplete;
+        gpu.queue.enqueueNDRangeKernel(qualityKernel,
+                                   cl::NullRange,
+                                   cl::NDRange(in.width(), in.height()),
+                                   cl::NullRange, 
+                                   nullptr,
+                                   &kernelComplete);
+
+        // Create new output vigra image
+        auto outImg = std::make_shared<ImageType>( in.width(), in.height() );
+        InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
+
+        // Read the kernel's output
+        std::vector<cl::Event> waitfor = {kernelComplete};
+        gpu.queue.enqueueReadImage(outputImage,
+                CL_TRUE,
+                VectorConstructor<size_t>::construct(0, 0, 0),
+                VectorConstructor<size_t>::construct(outImg->width(), outImg->height(), 1),
+                0,
+                0,
+                const_cast<InComponentType*>(outArray),
+                &waitfor);
+
+        std::cout << "Out array:" << std::endl;
+        printN(outArray, 12);
+
+        return outImg;
     }
-    */
+
 
 } /* DynamiCL */ 
 
@@ -281,8 +333,8 @@ int main(int argc, char const *argv[])
     auto processImage =
         [&]( std::shared_ptr<FloatImage> im )
         {
-            //cl::Kernel darkenKernel(program, "darkenImage");
-            return transformWithKernel(*im, gpu, program);
+            //return transformWithKernel(*im, gpu, program);
+            return calculateQualityCL(*im, gpu, program);
         };
 
     int currentIndex = 1;
