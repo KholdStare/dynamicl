@@ -208,9 +208,8 @@ namespace DynamiCL
                 in->height());
 
         // Kernel for downsampling rows
-        cl::Kernel rowKernel(program, "downsample_row");
-        rowKernel.setArg(0, inputImage);
-        rowKernel.setArg(1, interImage);
+        Kernel row = {program, "downsample_row", 5};
+        cl::Kernel rowKernel = row.build(inputImage, interImage);
 
         // Enqueue row kernel
         cl::Event rowComplete;
@@ -234,9 +233,8 @@ namespace DynamiCL
                 halfHeight);
 
         // Kernel for downsampling columns
-        cl::Kernel colKernel(program, "downsample_col");
-        colKernel.setArg(0, interImage);
-        colKernel.setArg(1, outputImage);
+        Kernel col = {program, "downsample_col", 5};
+        cl::Kernel colKernel = col.build(interImage, outputImage);
 
         // Enqueue col kernel
         std::vector<cl::Event> waitfor = {rowComplete};
@@ -253,9 +251,8 @@ namespace DynamiCL
          ******************/
 
         // Kernel for downsampling columns
-        cl::Kernel upcolKernel(program, "upsample_col");
-        upcolKernel.setArg(0, outputImage);
-        upcolKernel.setArg(1, interImage);
+        Kernel upcol = {program, "upsample_col", 5};
+        cl::Kernel upcolKernel = upcol.build(outputImage, interImage);
 
         // Enqueue col kernel
         waitfor[0] = colComplete;
@@ -272,9 +269,8 @@ namespace DynamiCL
          ******************/
 
         // Kernel for downsampling columns
-        cl::Kernel uprowKernel(program, "upsample_row");
-        uprowKernel.setArg(0, interImage);
-        uprowKernel.setArg(1, inputImage);
+        Kernel uprow = {program, "upsample_row", 5};
+        cl::Kernel uprowKernel = uprow.build(interImage, inputImage);
 
         // Enqueue col kernel
         waitfor[0] = upcolComplete;

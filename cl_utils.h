@@ -42,6 +42,41 @@ namespace DynamiCL
     /* Create program from a file and compile it */
     cl::Program buildProgram(cl::Context const& ctx, cl::Device dev, char const* filename);
 
+    /**
+     * Represents an OpenCL kernel of particular program,
+     * with some auxiliary information to help composition.
+     *
+     * Allows easy instantiations of kernels for multiple uses.
+     */
+    struct Kernel
+    {
+        cl::Program& program;
+        char const* name;
+        size_t const taps;
+
+        /**
+         * Instantiate a new kernel with the given arguments
+         */
+        template <typename... Ts>
+        cl::Kernel build(Ts&&... args)
+        {
+            cl::Kernel kernel(program, name);
+            build_impl(kernel, 0, std::forward<Ts>(args)...);
+            return kernel;
+        }
+
+    private:
+        template <typename T, typename... Ts>
+        void build_impl(cl::Kernel& kernel, size_t argIndex, T&& arg, Ts&&... rest)
+        {
+            kernel.setArg(argIndex, std::forward<T>(arg));
+            build_impl(kernel, argIndex+1, std::forward<Ts>(rest)...);
+        }
+
+        // no arguments remaining
+        void build_impl(cl::Kernel&, size_t) { }
+    };
+
     namespace detail
     {
         template<typename Vec>
