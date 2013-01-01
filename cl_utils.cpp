@@ -158,24 +158,38 @@ namespace DynamiCL
 
     PendingImage PendingImage::process(Kernel const& kernel, size_t width, size_t height)
     {
-        // construct a new pending image
-        PendingImage result(context);
-        result.image = cl::Image2D(context.context,
+        // construct a new image
+        cl::Image2D resultImage(context.context,
                 //CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: get image format from this image
                 width,
                 height);
 
+        return this->process(kernel, resultImage);
+    }
+
+    PendingImage PendingImage::process(Kernel const& kernel, cl::Image2D const& reuseImage)
+    {
+        // create pending image
+        PendingImage result(context, reuseImage);
+
         // create a kernel with that image
         cl::Kernel clkernel = kernel.build(this->image, result.image);
 
         // figure out range of kernel
+        cl::Image2D const* rangeGuide; // which image do we get the range from
         if (kernel.range == Kernel::Range::SOURCE)
         {
-            width = this->image.getImageInfo<CL_IMAGE_WIDTH>();
-            height = this->image.getImageInfo<CL_IMAGE_HEIGHT>();
+            rangeGuide = &this->image;
         }
+        else
+        {
+            rangeGuide = &reuseImage;
+        }
+
+        size_t width = rangeGuide->getImageInfo<CL_IMAGE_WIDTH>();
+        size_t height = rangeGuide->getImageInfo<CL_IMAGE_HEIGHT>();
 
         // enqueue kernel computation
         cl::Event complete;

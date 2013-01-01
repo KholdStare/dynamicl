@@ -63,7 +63,7 @@ namespace DynamiCL
         cl::Program const& program;
         char const* name;
         size_t const taps;
-        Range range;
+        Range const range;
 
         /**
          * Instantiate a new kernel with the given arguments
@@ -111,7 +111,7 @@ namespace DynamiCL
         { }
 
         PendingImage process(Kernel const& kernel, size_t width, size_t height);
-        PendingImage process(Kernel const& kernel, cl::Image2D reuseImage);
+        PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage);
     };
 
 

@@ -201,10 +201,13 @@ namespace DynamiCL
 
         PendingImage inputImage(gpu, clInputImage);
 
-        // Create an intermediate image in compute device
+        // calculate width of next image
         size_t halfWidth = halveDimension(in->width());
 
+        // row downsampling kernel
         Kernel row = {program, "downsample_row", 5, Kernel::Range::DESTINATION};
+
+        // process image with kernel
         PendingImage pendingInterImage =
             inputImage.process(row, halfWidth, in->height());
 
@@ -216,24 +219,10 @@ namespace DynamiCL
 
         // Create an output image in compute device
         size_t halfHeight = halveDimension(in->height());
-        cl::Image2D outputImage(gpu.context,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                halfWidth,
-                halfHeight);
 
-        // Kernel for downsampling columns
-        Kernel col = {program, "downsample_col", 5};
-        cl::Kernel colKernel = col.build(pendingInterImage.image, outputImage);
-
-        // Enqueue col kernel
-        cl::Event colComplete;
-        gpu.queue.enqueueNDRangeKernel(colKernel,
-                                   cl::NullRange,
-                                   cl::NDRange(halfWidth, halfHeight),
-                                   cl::NullRange, 
-                                   &pendingInterImage.events,
-                                   &colComplete);
+        Kernel col = {program, "downsample_col", 5, Kernel::Range::DESTINATION};
+        PendingImage pendingSmallImage =
+            pendingInterImage.process(col, halfWidth, halfHeight);
 
         std::cout << "Downsampled Cols" << std::endl;
 
@@ -242,18 +231,9 @@ namespace DynamiCL
          ******************/
 
         // Kernel for downsampling columns
-        Kernel upcol = {program, "upsample_col", 5};
-        cl::Kernel upcolKernel = upcol.build(outputImage, pendingInterImage.image);
-
-        // Enqueue col kernel
-        std::vector<cl::Event> waitfor = { colComplete };
-        cl::Event upcolComplete;
-        gpu.queue.enqueueNDRangeKernel(upcolKernel,
-                                   cl::NullRange,
-                                   cl::NDRange(halfWidth, halfHeight),
-                                   cl::NullRange, 
-                                   &waitfor,
-                                   &upcolComplete);
+        Kernel upcol = {program, "upsample_col", 5, Kernel::Range::SOURCE};
+        PendingImage pendingUpCol =
+            pendingSmallImage.process(upcol, pendingInterImage.image);
 
         std::cout << "Upsampled Cols" << std::endl;
 
@@ -262,17 +242,16 @@ namespace DynamiCL
          ******************/
 
         // Kernel for downsampling columns
-        Kernel uprow = {program, "upsample_row", 5};
-        cl::Kernel uprowKernel = uprow.build(pendingInterImage.image, inputImage.image);
+        Kernel uprow = {program, "upsample_row", 5, Kernel::Range::SOURCE};
+        cl::Kernel uprowKernel = uprow.build(pendingUpCol.image, inputImage.image);
 
         // Enqueue col kernel
-        waitfor[0] = upcolComplete;
         cl::Event uprowComplete;
         gpu.queue.enqueueNDRangeKernel(uprowKernel,
                                    cl::NullRange,
                                    cl::NDRange(halfWidth, in->height()),
                                    cl::NullRange, 
-                                   &waitfor,
+                                   &pendingUpCol.events,
                                    &uprowComplete);
 
         std::cout << "Upsampled Rows" << std::endl;
@@ -286,7 +265,7 @@ namespace DynamiCL
         //InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
         // Read the kernel's output
-        waitfor[0] = uprowComplete;
+        std::vector<cl::Event> waitfor = { uprowComplete };
         gpu.queue.enqueueReadImage(inputImage.image,
                 CL_TRUE,
                 VectorConstructor<size_t>::construct(0, 0, 0),
