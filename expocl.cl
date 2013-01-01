@@ -99,6 +99,38 @@ __kernel void upsample_col(__read_only image2d_t input_image, __write_only image
     write_imagef (output_image, out_coord+(int2)(0,1), out1);
 }
 
+/***************************************************************************
+ *                         Pyramid Related Kernels                         *
+ ***************************************************************************/
+
+/**
+ * Given the original image and the gaussian blurred image (upsampled from a
+ * lower level of a pyramid) create the laplacian by subtracting the two.
+ *
+ * Importantly, the alpha channel (used for gaussian pyramid) is preserved as is.
+ */
+__kernel void create_laplacian(__read_only image2d_t original,
+                               __read_only image2d_t blurred,
+                               __write_only image2d_t laplacian)
+{
+    int2 coord = (int2)( get_global_id(0), get_global_id(1) );
+
+    float4 o = read_imagef (original, g_sampler, coord);
+    float4 b = read_imagef (blurred, g_sampler, coord);
+
+    float4 l = o - b;
+    // TODO remove experiment
+    l += 0.5f;
+    l.s3 = 1.0f;
+    /*l.s3 = o.s3; // preserve original alpha;*/
+
+    write_imagef (laplacian, coord, l);
+}
+
+/***************************************************************************
+ *                          HDR Quality Measures                           *
+ ***************************************************************************/
+
 __kernel void upsample_row(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     int2 out_dim = get_image_dim(output_image);

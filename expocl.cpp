@@ -217,9 +217,39 @@ namespace DynamiCL
 
         Kernel uprow = {program, "upsample_row", 5, Kernel::Range::SOURCE};
         PendingImage pendingUpRow =
-            pendingUpCol.process(uprow, inputImage.image);
+            pendingUpCol.process(uprow, in->width(), in->height());
 
         std::cout << "Upsampled Rows" << std::endl;
+
+        /**********************
+         *  Create Laplacian  *
+         **********************/
+
+        Kernel createLaplacian = {program, "create_laplacian", 1, Kernel::Range::SOURCE};
+
+        cl::Image2D laplacianImage(gpu.context,
+                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                in->width(),
+                in->height());
+
+        cl::Kernel clkernel =
+            createLaplacian.build(inputImage.image,
+                                  pendingUpRow.image,
+                                  laplacianImage);
+                    
+        cl::Event complete;
+        gpu.queue.enqueueNDRangeKernel(clkernel,
+                                   cl::NullRange,
+                                   cl::NDRange(in->width(), in->height()),
+                                   cl::NullRange, 
+                                   &pendingUpRow.events,
+                                   &complete);
+
+        PendingImage finalResult(gpu, laplacianImage);
+        finalResult.events.push_back(complete);
+
+        std::cout << "Created Laplacian" << std::endl;
 
         /***********************
          *  Read final output  *
@@ -230,7 +260,7 @@ namespace DynamiCL
         //InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
 
         // Read the kernel's output
-        pendingUpRow.read(const_cast<InComponentType*>(inArray));
+        finalResult.read(const_cast<InComponentType*>(inArray));
 
         std::cout << "Out array:" << std::endl;
         printN(inArray, 12);

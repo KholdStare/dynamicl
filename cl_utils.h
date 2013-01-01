@@ -8,6 +8,8 @@
 #include <CL/cl.hpp>
 #endif
 
+#include <functional>
+
 namespace DynamiCL
 {
 
@@ -98,6 +100,21 @@ namespace DynamiCL
         cl::Image2D image;
         std::vector<cl::Event> events; // TODO: const?
 
+        PendingImage(PendingImage&& other)
+            : context(other.context),
+              image(std::move(other.image)),
+              events(std::move(other.events))
+        {
+            other.image = cl::Image2D();
+        }
+
+        PendingImage& operator =(PendingImage&& other)
+        {
+            image = std::move(other.image);
+            events = std::move(other.events);
+            other.image = cl::Image2D();
+        }
+
         PendingImage(ComputeContext const& c)
             : context(c),
               image(),
@@ -119,6 +136,50 @@ namespace DynamiCL
         void read(void* hostPtr);
     };
 
+    /***************************************************************************
+     *                             Pyramid Helpers                             *
+     ***************************************************************************/
+    
+    /**
+     * Represents an image pyramid, with methods to construct it from
+     * a source image.
+     *
+     * Manages caching OpenCL images on the host, as well as chunking
+     * them appropriately for operations to fit in GPU memory.
+     */
+    class ImagePyramid
+    {
+    public:
+        /**
+         * An image pair, of two levels of a pyramid
+         */
+        struct LevelPair
+        {
+            PendingImage upper;
+            PendingImage lower;
+        }
+
+    private:
+        // TODO: make these typedefs.
+        // define a static function for fusing?
+        /**
+         * Creates a new level
+         */
+        std::function< LevelPair(PendingImage const&) >
+            nextLevelFunc;
+
+        /**
+         * Collapses two levels
+         */
+        std::function< PendingImage(LevelPair const&) >
+            collapseLevelFunc;
+
+        /**
+         * Fuses several pyramids at a single layer
+         */
+        std::function< PendingImage(std::vector<PendingImage> const&) >
+            collapseLevelFunc;
+    };
 
     /***************************************************************************
      *                           cl::Vector helpers                            *
