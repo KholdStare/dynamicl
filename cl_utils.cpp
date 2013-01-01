@@ -205,4 +205,19 @@ namespace DynamiCL
         return result;
     }
 
+    void PendingImage::read(void* hostPtr)
+    {
+        size_t width = this->image.getImageInfo<CL_IMAGE_WIDTH>();
+        size_t height = this->image.getImageInfo<CL_IMAGE_HEIGHT>();
+
+        context.queue.enqueueReadImage(this->image,
+                CL_TRUE,
+                VectorConstructor<size_t>::construct(0, 0, 0),
+                VectorConstructor<size_t>::construct(width, height, 1),
+                0,
+                0,
+                hostPtr,
+                &this->events);
+    }
+
 } /* DynamiCL */ 

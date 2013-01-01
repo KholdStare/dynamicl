@@ -112,6 +112,11 @@ namespace DynamiCL
 
         PendingImage process(Kernel const& kernel, size_t width, size_t height);
         PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage);
+
+        /**
+         * Read image into host memory
+         */
+        void read(void* hostPtr);
     };
 
 
