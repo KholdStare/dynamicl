@@ -18,9 +18,9 @@ namespace DynamiCL
      */
     struct ComputeContext
     {
-        cl::Device device;
-        cl::Context context;
-        cl::CommandQueue queue;
+        cl::Device const device;
+        cl::Context const context;
+        cl::CommandQueue const queue;
 
         ComputeContext();
     };
@@ -42,6 +42,10 @@ namespace DynamiCL
     /* Create program from a file and compile it */
     cl::Program buildProgram(cl::Context const& ctx, cl::Device dev, char const* filename);
 
+    /***************************************************************************
+     *                        Kernel and Image helpers                         *
+     ***************************************************************************/
+    
     /**
      * Represents an OpenCL kernel of particular program,
      * with some auxiliary information to help composition.
@@ -50,15 +54,22 @@ namespace DynamiCL
      */
     struct Kernel
     {
-        cl::Program& program;
+        enum class Range
+        {
+            SOURCE,
+            DESTINATION
+        };
+
+        cl::Program const& program;
         char const* name;
         size_t const taps;
+        Range range;
 
         /**
          * Instantiate a new kernel with the given arguments
          */
         template <typename... Ts>
-        cl::Kernel build(Ts&&... args)
+        cl::Kernel build(Ts&&... args) const
         {
             cl::Kernel kernel(program, name);
             build_impl(kernel, 0, std::forward<Ts>(args)...);
@@ -67,15 +78,46 @@ namespace DynamiCL
 
     private:
         template <typename T, typename... Ts>
-        void build_impl(cl::Kernel& kernel, size_t argIndex, T&& arg, Ts&&... rest)
+        static void build_impl(cl::Kernel& kernel, size_t argIndex, T&& arg, Ts&&... rest)
         {
             kernel.setArg(argIndex, std::forward<T>(arg));
             build_impl(kernel, argIndex+1, std::forward<Ts>(rest)...);
         }
 
         // no arguments remaining
-        void build_impl(cl::Kernel&, size_t) { }
+        static void build_impl(cl::Kernel&, size_t) { }
     };
+
+    /**
+     * Represents an image that is currently being processed.
+     * think of it as "std::future<Image>" but for OpenCL
+     */
+    struct PendingImage
+    {
+        ComputeContext const& context;
+        cl::Image2D image;
+        std::vector<cl::Event> events; // TODO: const?
+
+        PendingImage(ComputeContext const& c)
+            : context(c),
+              image(),
+              events()
+        { }
+
+        PendingImage(ComputeContext const& c, cl::Image2D const& im)
+            : context(c),
+              image(im),
+              events()
+        { }
+
+        PendingImage process(Kernel const& kernel, size_t width, size_t height);
+        PendingImage process(Kernel const& kernel, cl::Image2D reuseImage);
+    };
+
+
+    /***************************************************************************
+     *                           cl::Vector helpers                            *
+     ***************************************************************************/
 
     namespace detail
     {

@@ -171,8 +171,8 @@ namespace DynamiCL
 
     std::shared_ptr< FloatImage >
     transformWithKernel( std::shared_ptr< FloatImage > in,
-                       ComputeContext& gpu,
-                       cl::Program& program )
+                       ComputeContext const& gpu,
+                       cl::Program const& program )
     {
         using namespace vigra;
         typedef float InComponentType;
@@ -191,7 +191,7 @@ namespace DynamiCL
         // create input buffer from input image
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
-        cl::Image2D inputImage(gpu.context,
+        cl::Image2D clInputImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
                 in->width(),
@@ -199,26 +199,16 @@ namespace DynamiCL
                 0,
                 const_cast<InComponentType*>(inArray));
 
+        PendingImage inputImage(gpu, clInputImage);
+
         // Create an intermediate image in compute device
         size_t halfWidth = halveDimension(in->width());
-        cl::Image2D interImage(gpu.context,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                halfWidth,
-                in->height());
 
-        // Kernel for downsampling rows
-        Kernel row = {program, "downsample_row", 5};
-        cl::Kernel rowKernel = row.build(inputImage, interImage);
+        Kernel row = {program, "downsample_row", 5, Kernel::Range::DESTINATION};
+        PendingImage pendingInterImage =
+            inputImage.process(row, halfWidth, in->height());
 
-        // Enqueue row kernel
-        cl::Event rowComplete;
-        gpu.queue.enqueueNDRangeKernel(rowKernel,
-                                   cl::NullRange,
-                                   cl::NDRange(halfWidth, in->height()),
-                                   cl::NullRange,
-                                   nullptr,
-                                   &rowComplete);
+        std::cout << "Downsampled Rows" << std::endl;
 
         /********************
          *  Downsample col  *
@@ -234,17 +224,18 @@ namespace DynamiCL
 
         // Kernel for downsampling columns
         Kernel col = {program, "downsample_col", 5};
-        cl::Kernel colKernel = col.build(interImage, outputImage);
+        cl::Kernel colKernel = col.build(pendingInterImage.image, outputImage);
 
         // Enqueue col kernel
-        std::vector<cl::Event> waitfor = {rowComplete};
         cl::Event colComplete;
         gpu.queue.enqueueNDRangeKernel(colKernel,
                                    cl::NullRange,
                                    cl::NDRange(halfWidth, halfHeight),
                                    cl::NullRange, 
-                                   &waitfor,
+                                   &pendingInterImage.events,
                                    &colComplete);
+
+        std::cout << "Downsampled Cols" << std::endl;
 
         /******************
          *  Upsample col  *
@@ -252,10 +243,10 @@ namespace DynamiCL
 
         // Kernel for downsampling columns
         Kernel upcol = {program, "upsample_col", 5};
-        cl::Kernel upcolKernel = upcol.build(outputImage, interImage);
+        cl::Kernel upcolKernel = upcol.build(outputImage, pendingInterImage.image);
 
         // Enqueue col kernel
-        waitfor[0] = colComplete;
+        std::vector<cl::Event> waitfor = { colComplete };
         cl::Event upcolComplete;
         gpu.queue.enqueueNDRangeKernel(upcolKernel,
                                    cl::NullRange,
@@ -264,13 +255,15 @@ namespace DynamiCL
                                    &waitfor,
                                    &upcolComplete);
 
+        std::cout << "Upsampled Cols" << std::endl;
+
         /******************
          *  Upsample row  *
          ******************/
 
         // Kernel for downsampling columns
         Kernel uprow = {program, "upsample_row", 5};
-        cl::Kernel uprowKernel = uprow.build(interImage, inputImage);
+        cl::Kernel uprowKernel = uprow.build(pendingInterImage.image, inputImage.image);
 
         // Enqueue col kernel
         waitfor[0] = upcolComplete;
@@ -282,6 +275,8 @@ namespace DynamiCL
                                    &waitfor,
                                    &uprowComplete);
 
+        std::cout << "Upsampled Rows" << std::endl;
+
         /***********************
          *  Read final output  *
          ***********************/
@@ -292,7 +287,7 @@ namespace DynamiCL
 
         // Read the kernel's output
         waitfor[0] = uprowComplete;
-        gpu.queue.enqueueReadImage(inputImage,
+        gpu.queue.enqueueReadImage(inputImage.image,
                 CL_TRUE,
                 VectorConstructor<size_t>::construct(0, 0, 0),
                 VectorConstructor<size_t>::construct(in->width(), in->height(), 1),
@@ -309,8 +304,8 @@ namespace DynamiCL
 
     std::shared_ptr< FloatImage >
     calculateQualityCL(std::shared_ptr< FloatImage > in,
-                       ComputeContext& gpu,
-                       cl::Program& program )
+                       ComputeContext const& gpu,
+                       cl::Program const& program )
     {
         using namespace vigra;
         typedef float InComponentType;
