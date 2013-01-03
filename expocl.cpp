@@ -16,7 +16,7 @@
 
 namespace DynamiCL
 {
-    typedef vigra::BasicImage< vigra::TinyVector< float, 4 >> FloatImage;
+    typedef HostImage<RGBA<float>> FloatImage;
         
     std::shared_ptr< vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >>>
     loadImage(std::string const& path)
@@ -40,51 +40,41 @@ namespace DynamiCL
     }
 
     template <typename InComponentType>
-    inline vigra::TinyVector<float, 4>
+    inline RGBA<float>
     convertPixelToFloat4(vigra::RGBValue< InComponentType > const& in)
     {
         using namespace vigra;
 
         const float inMax = static_cast<float>(NumericTraits<InComponentType>::max());
 
-        TinyVector<float, 4> out;
-        auto inIt = in.begin();
-        auto inEnd = in.end();
-        auto outIt = out.begin();
-        auto outEnd = out.end();
+        RGBA<float> out;
 
         // copy values from input and scale
-        for (; ( inIt != inEnd ) && ( outIt != outEnd ); ++inIt, ++ outIt)
+        for (size_t i = 0; i < 3; ++i)
         {
-            *outIt = static_cast<float>(*inIt) / inMax;
+            out.components[i] = static_cast<float>(in[i]) / inMax;
         }
 
-        // fill any remaining values in output with ones
-        for (; outIt != outEnd; ++ outIt)
-        {
-            *outIt = 1.0f;
-        }
+        // set alpha
+        out.a = 1.0f;
 
         return out;
     }
 
     template <typename OutComponentType>
     vigra::RGBValue< OutComponentType >
-    convertPixelFromFloat4(vigra::TinyVector<float, 4> const& in)
+    convertPixelFromFloat4(RGBA<float> const& in)
     {
         using namespace vigra;
 
         const float outMax = static_cast<float>(NumericTraits<OutComponentType>::max());
 
         RGBValue< OutComponentType > out;
-        auto inIt = in.begin();
-        auto outIt = out.begin();
-        auto outEnd = out.end();
 
         // copy values from input, apply alpha, and scale
-        for (; outIt != outEnd; ++inIt, ++outIt)
+        for (size_t i = 0; i < 3; ++i)
         {
-            *outIt = static_cast<OutComponentType>(*inIt * outMax * in[3]);
+            out[i] = static_cast<OutComponentType>(in[i] * outMax * in.a);
         }
 
         return out;
@@ -100,8 +90,8 @@ namespace DynamiCL
         auto out = std::make_shared<FloatImage>(in.width(), in.height());
 
         // transform using unary function
-        vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
-                out->upperLeft(), out->accessor(), convertPixelToFloat4<InComponentType>);
+        std::transform(in.begin(), in.end(), out->begin(),
+                       convertPixelToFloat4<InComponentType>);
 
         return out;
     }
@@ -121,9 +111,8 @@ namespace DynamiCL
         OutImgType out(in.width(), in.height());
 
         // transform
-        vigra::transformImage(in.upperLeft(), in.lowerRight(), in.accessor(),
-                out.upperLeft(), out.accessor(),
-                convertPixelFromFloat4<OutComponentType>);
+        std::transform(in.begin(), in.end(), out.begin(),
+                       convertPixelFromFloat4<OutComponentType>);
 
         // write the image to the file given as second argument
         // the file type will be determined from the file name's extension
@@ -151,11 +140,9 @@ namespace DynamiCL
     {
         using namespace vigra;
         typedef float InComponentType;
-        typedef TinyVector< InComponentType, 4 > PixelType;
-        typedef BasicImage< PixelType > ImageType;
 
         // get raw component array from input image
-        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->data());
+        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->begin());
         std::cout << "In array:" << std::endl;
         printN(inArray, 12);
 
@@ -255,17 +242,14 @@ namespace DynamiCL
          *  Read final output  *
          ***********************/
 
-        //// Create new output vigra image
-        //auto outImg = std::make_shared<ImageType>( in->width(), in->height() );
-        //InComponentType const* outArray = reinterpret_cast<const InComponentType*>(outImg->data());
-
-        // Read the kernel's output
-        finalResult.read(const_cast<InComponentType*>(inArray));
+        // Create new output image from last pending output
+        auto out = makeHostImage<RGBA<float>>(pendingUpRow);
+        InComponentType const* outArray = reinterpret_cast<const InComponentType*>(out->begin());
 
         std::cout << "Out array:" << std::endl;
         printN(inArray, 12);
 
-        return in;
+        return out;
     }
 
     std::shared_ptr< FloatImage >
@@ -279,7 +263,7 @@ namespace DynamiCL
         typedef BasicImage< PixelType > ImageType;
 
         // get raw component array from input image
-        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->data());
+        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->begin());
         std::cout << "In array:" << std::endl;
         printN(inArray, 12);
 

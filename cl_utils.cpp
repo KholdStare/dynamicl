@@ -160,8 +160,8 @@ namespace DynamiCL
     {
         // construct a new image
         cl::Image2D resultImage(context.context,
-                //CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
+                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+                //CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: get image format from this image
                 width,
                 height);
@@ -205,10 +205,10 @@ namespace DynamiCL
         return result;
     }
 
-    void PendingImage::read(void* hostPtr)
+    void PendingImage::read(void* hostPtr) const
     {
-        size_t width = this->image.getImageInfo<CL_IMAGE_WIDTH>();
-        size_t height = this->image.getImageInfo<CL_IMAGE_HEIGHT>();
+        size_t width = this->width();
+        size_t height = this->height();
 
         context.queue.enqueueReadImage(this->image,
                 CL_TRUE,
