@@ -243,7 +243,7 @@ namespace DynamiCL
          ***********************/
 
         // Create new output image from last pending output
-        auto out = makeHostImage<RGBA<float>>(pendingUpRow);
+        auto out = makeHostImage<RGBA<float>>(finalResult);
         InComponentType const* outArray = reinterpret_cast<const InComponentType*>(out->begin());
 
         std::cout << "Out array:" << std::endl;
@@ -251,6 +251,27 @@ namespace DynamiCL
 
         return out;
     }
+
+    struct mergeHDR
+    {
+        const size_t numExposures;
+        const ComputeContext context;
+        const cl::Program program;
+
+        // from shared_ptr image to shared_ptr of image
+        template <typename InputIt, typename OutputIt>
+        void operator() (InputIt cur, InputIt last, OutputIt dest)
+        {
+            while(cur != last)
+            {
+                *dest = transformWithKernel(
+                            *cur++,
+                            context,
+                            program );
+            }
+        }
+
+    };
 
     std::shared_ptr< FloatImage >
     calculateQualityCL(std::shared_ptr< FloatImage > in,
@@ -349,12 +370,6 @@ int main(int argc, char const *argv[])
             return calculateQualityCL(im, gpu, program);
         };
 
-    auto constructPyramid =
-        [&]( std::shared_ptr<FloatImage> im )
-        {
-            return transformWithKernel(im, gpu, program);
-        };
-
     int currentIndex = 1;
     auto saveImage =
         [&]( std::shared_ptr<FloatImage> im )
@@ -371,7 +386,8 @@ int main(int argc, char const *argv[])
           >> loadImage
           >> transformImage
           //>> calcQuality
-          >> constructPyramid
+          >> Plumbing::makeIteratorFilter<std::shared_ptr<FloatImage>,
+                                          std::shared_ptr<FloatImage>>(mergeHDR{ 3, gpu, program })
           >> saveImage;
 
     try

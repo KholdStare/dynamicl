@@ -195,6 +195,8 @@ namespace DynamiCL
               pixArray_(new PixType[width*height])
         { }
 
+        ~HostImage() { dealloc(); }
+
         HostImage()
             : width_(0),
               height_(0),

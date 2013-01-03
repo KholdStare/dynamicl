@@ -2,11 +2,14 @@ import os
 import platform
 
 env = Environment()  # Initialize the environment
-env['CPPFLAGS'] = '-O3 -g -pg -std=c++0x'
+env.Append(CPPFLAGS = [ '-O3', '-std=c++0x' ])
 env.Append(LIBS = [ 'pthread',
             'boost_unit_test_framework',
             'OpenCL',
             'vigraimpex' ])
+
+# debugging flags
+env.Append(CPPFLAGS =  [ '-g', '-pg' ])
 env.Append(LINKFLAGS = [ '-g', '-pg' ])
 	
 bits = 'x86_64'

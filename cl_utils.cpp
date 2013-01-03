@@ -161,7 +161,6 @@ namespace DynamiCL
         // construct a new image
         cl::Image2D resultImage(context.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                //CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: get image format from this image
                 width,
                 height);
