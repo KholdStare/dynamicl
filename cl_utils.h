@@ -132,6 +132,7 @@ namespace DynamiCL
         size_t width() const { return this->image.getImageInfo<CL_IMAGE_WIDTH>(); }
         size_t height() const { return this->image.getImageInfo<CL_IMAGE_HEIGHT>(); }
 
+        // TODO: can these be const?
         PendingImage process(Kernel const& kernel, size_t width, size_t height);
         PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage);
 
@@ -254,6 +255,9 @@ namespace DynamiCL
         const_iterator cbegin() const { return begin(); }
         const_iterator cend()   const { return end(); }
 
+        void const* rawData() const { return static_cast<void const*>(begin()); }
+        void*       rawData()       { return static_cast<void*>(begin()); }
+
         /**
          * Row major indexing. so image[y][x]
          */
@@ -269,6 +273,23 @@ namespace DynamiCL
         typedef HostImage<PixType> image_type;
         auto out = std::make_shared<image_type>( pending.width(), pending.height() );
         pending.read(out->begin());
+
+        return out;
+    }
+
+    template <typename PixType>
+    PendingImage
+    makePendingImage(ComputeContext const& context, HostImage<PixType> const& image)
+    {
+        cl::Image2D clInputImage(context.context,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: not hardcode?
+                image.width(),
+                image.height(),
+                0,
+                const_cast<void*>(image.rawData()));
+
+        PendingImage out(context, clInputImage);
 
         return out;
     }

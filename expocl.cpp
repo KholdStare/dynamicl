@@ -133,45 +133,27 @@ namespace DynamiCL
         return (n + 1) / 2;
     }
 
-    std::shared_ptr< FloatImage >
-    transformWithKernel( std::shared_ptr< FloatImage > in,
+    ImagePyramid::LevelPair
+    createPyramidLevel(PendingImage& inputImage,
                        ComputeContext const& gpu,
                        cl::Program const& program )
     {
-        using namespace vigra;
-        typedef float InComponentType;
-
-        // get raw component array from input image
-        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->begin());
-        std::cout << "In array:" << std::endl;
-        printN(inArray, 12);
+        size_t width = inputImage.width();
+        size_t height = inputImage.height();
 
         /********************
          *  Downsample row  *
          ********************/
 
-        // create input buffer from input image
-        // TODO: size may be too large for device
-        // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
-        cl::Image2D clInputImage(gpu.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in->width(),
-                in->height(),
-                0,
-                const_cast<InComponentType*>(inArray));
-
-        PendingImage inputImage(gpu, clInputImage);
-
         // calculate width of next image
-        size_t halfWidth = halveDimension(in->width());
+        size_t halfWidth = halveDimension(width);
 
         // row downsampling kernel
         Kernel row = {program, "downsample_row", 5, Kernel::Range::DESTINATION};
 
         // process image with kernel
         PendingImage pendingInterImage =
-            inputImage.process(row, halfWidth, in->height());
+            inputImage.process(row, halfWidth, height);
 
         std::cout << "Downsampled Rows" << std::endl;
 
@@ -180,10 +162,10 @@ namespace DynamiCL
          ********************/
 
         // Create an output image in compute device
-        size_t halfHeight = halveDimension(in->height());
+        size_t halfHeight = halveDimension(height);
 
         Kernel col = {program, "downsample_col", 5, Kernel::Range::DESTINATION};
-        PendingImage pendingSmallImage =
+        PendingImage downsampled =
             pendingInterImage.process(col, halfWidth, halfHeight);
 
         std::cout << "Downsampled Cols" << std::endl;
@@ -194,7 +176,7 @@ namespace DynamiCL
 
         Kernel upcol = {program, "upsample_col", 5, Kernel::Range::SOURCE};
         PendingImage pendingUpCol =
-            pendingSmallImage.process(upcol, pendingInterImage.image);
+            downsampled.process(upcol, pendingInterImage.image);
 
         std::cout << "Upsampled Cols" << std::endl;
 
@@ -204,7 +186,7 @@ namespace DynamiCL
 
         Kernel uprow = {program, "upsample_row", 5, Kernel::Range::SOURCE};
         PendingImage pendingUpRow =
-            pendingUpCol.process(uprow, in->width(), in->height());
+            pendingUpCol.process(uprow, width, height);
 
         std::cout << "Upsampled Rows" << std::endl;
 
@@ -217,8 +199,8 @@ namespace DynamiCL
         cl::Image2D laplacianImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
                 cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in->width(),
-                in->height());
+                width,
+                height);
 
         cl::Kernel clkernel =
             createLaplacian.build(inputImage.image,
@@ -228,7 +210,7 @@ namespace DynamiCL
         cl::Event complete;
         gpu.queue.enqueueNDRangeKernel(clkernel,
                                    cl::NullRange,
-                                   cl::NDRange(in->width(), in->height()),
+                                   cl::NDRange(width, height),
                                    cl::NullRange, 
                                    &pendingUpRow.events,
                                    &complete);
@@ -238,25 +220,17 @@ namespace DynamiCL
 
         std::cout << "Created Laplacian" << std::endl;
 
-        /***********************
-         *  Read final output  *
-         ***********************/
-
-        // Create new output image from last pending output
-        auto out = makeHostImage<RGBA<float>>(finalResult);
-        InComponentType const* outArray = reinterpret_cast<const InComponentType*>(out->begin());
-
-        std::cout << "Out array:" << std::endl;
-        printN(inArray, 12);
-
-        return out;
+        return {std::move(finalResult), std::move(downsampled)};
     }
 
+    /**
+     * Function object for merging exposures
+     */
     struct mergeHDR
     {
         const size_t numExposures;
-        const ComputeContext context;
-        const cl::Program program;
+        ComputeContext const& context;
+        cl::Program const& program;
 
         // from shared_ptr image to shared_ptr of image
         template <typename InputIt, typename OutputIt>
@@ -264,10 +238,19 @@ namespace DynamiCL
         {
             while(cur != last)
             {
-                *dest = transformWithKernel(
-                            *cur++,
-                            context,
-                            program );
+                std::shared_ptr<FloatImage> in = *cur++;
+
+                PendingImage inputImage = makePendingImage(context, *in);
+
+                ImagePyramid::LevelPair pair =
+                    createPyramidLevel( inputImage,
+                                        context,
+                                        program );
+
+                *dest = makeHostImage<FloatImage::pixel_type>(pair.upper);
+                dest++;
+                *dest = makeHostImage<FloatImage::pixel_type>(pair.lower);
+                dest++;
             }
         }
 
@@ -374,10 +357,10 @@ int main(int argc, char const *argv[])
     auto saveImage =
         [&]( std::shared_ptr<FloatImage> im )
         {
-            std::string outPath(DynamiCL::stripExtension(argv[currentIndex]));
-            outPath += ".tiff";
+            std::stringstream sstr;
+            sstr << "out" << currentIndex << ".tiff";
 
-            saveTiff16(*im, outPath);
+            saveTiff16(*im, sstr.str());
             ++currentIndex;
         };
 
@@ -385,7 +368,6 @@ int main(int argc, char const *argv[])
           Plumbing::makeSource(paths)
           >> loadImage
           >> transformImage
-          //>> calcQuality
           >> Plumbing::makeIteratorFilter<std::shared_ptr<FloatImage>,
                                           std::shared_ptr<FloatImage>>(mergeHDR{ 3, gpu, program })
           >> saveImage;
