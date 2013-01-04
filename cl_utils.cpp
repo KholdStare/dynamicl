@@ -212,7 +212,7 @@ namespace DynamiCL
         return result;
     }
 
-    void PendingImage::read(void* hostPtr) const
+    void PendingImage::readInto(void* hostPtr) const
     {
         size_t width = this->width();
         size_t height = this->height();
@@ -249,6 +249,46 @@ namespace DynamiCL
 
         // last level is byproduct of last creation
         levels_.push_back( std::move(*makeHostImage<pixel_type>(image)) );
+    }
+
+    ImagePyramid::image_type ImagePyramid::collapse(CollapseLevelFunc collapseLevel)
+    {
+        std::vector<image_type> levels = this->releaseLevels();
+
+        // extracts next level
+        auto nextLevel =
+            [&]() -> image_type
+            {
+                if (levels.empty())
+                {
+                    return image_type();
+                }
+                image_type i = std::move(levels.back());
+                levels.pop_back();
+                return i;
+            };
+
+        image_type lower = nextLevel();
+        PendingImage result = makePendingImage(context_, lower);
+        image_type upper = nextLevel();
+
+        // keep collapsing layers
+        while(upper.valid())
+        {
+            PendingImage u = makePendingImage(context_, upper);
+            // create pair to pass to the collapser
+            LevelPair pair {std::move(u), std::move(result)};
+
+            // collapse using passed function
+            result = collapseLevel(pair);
+
+            // save upper layer for later
+            lower = std::move(upper);
+            upper = nextLevel();
+        }
+
+        result.readInto(lower.rawData());
+        return lower;
     }
 
 } /* DynamiCL */ 

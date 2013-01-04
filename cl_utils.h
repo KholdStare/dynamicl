@@ -65,7 +65,6 @@ namespace DynamiCL
 
         cl::Program const& program;
         char const* name;
-        size_t const taps;
         Range const range;
 
         /**
@@ -140,7 +139,7 @@ namespace DynamiCL
         /**
          * Read image into host memory
          */
-        void read(void* hostPtr) const;
+        void readInto(void* hostPtr) const;
         
     };
 
@@ -236,9 +235,9 @@ namespace DynamiCL
          */
         bool valid()
         {
-            return ( pixArray_ == nullptr )
-                   || width_ == 0
-                   || height_ == 0;
+            return ( pixArray_ != nullptr )
+                   && width_ != 0
+                   && height_ != 0;
         }
 
         operator bool()
@@ -267,13 +266,26 @@ namespace DynamiCL
 
     };
 
+    /**
+     * Takes an image currently on the host, and transforms
+     * it inplace using an OpenCL kernel.
+     */
+    template <typename PixType>
+    void processImageInPlace(HostImage<PixType>& image,
+                              Kernel const& kernel,
+                              ComputeContext const& context)
+    {
+        PendingImage clImage = makePendingImage(context, image);
+        clImage.process(kernel).readInto(image.rawData());
+    }
+
     template <typename PixType>
     std::shared_ptr<HostImage<PixType>>
     makeHostImage(PendingImage const& pending)
     {
         typedef HostImage<PixType> image_type;
         auto out = std::make_shared<image_type>( pending.width(), pending.height() );
-        pending.read(out->begin());
+        pending.readInto(out->rawData());
 
         return out;
     }
@@ -351,6 +363,13 @@ namespace DynamiCL
         std::vector<image_type> const& levels() const { return levels_; }
 
         std::vector<image_type> releaseLevels() { return std::move(levels_); }
+
+        /**
+         * Returns collapsed image from image pyramid.
+         *
+         * Pyramid is left empty (no levels)
+         */
+        image_type collapse(CollapseLevelFunc);
 
     private:
         NextLevelFunc nextLevelFunc;

@@ -120,11 +120,25 @@ __kernel void create_laplacian(__read_only image2d_t original,
 
     float4 l = o - b;
     // TODO remove experiment
-    l += 0.5f;
-    l.s3 = 1.0f;
-    /*l.s3 = o.s3; // preserve original alpha;*/
+    /*l += 0.5f;*/
+    /*l.s3 = 1.0f;*/
+    l.s3 = o.s3; // preserve original alpha;
 
     write_imagef (laplacian, coord, l);
+}
+
+__kernel void collapse_level( __read_only image2d_t blurred,
+                              __read_only image2d_t laplacian,
+                              __write_only  image2d_t collapsed)
+{
+    int2 coord = (int2)( get_global_id(0), get_global_id(1) );
+
+    float4 b = read_imagef (blurred, g_sampler, coord);
+    float4 l = read_imagef (laplacian, g_sampler, coord);
+
+    float4 c = b + l;
+
+    write_imagef (collapsed, coord, c);
 }
 
 /***************************************************************************

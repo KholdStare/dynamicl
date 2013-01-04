@@ -74,7 +74,8 @@ namespace DynamiCL
         // copy values from input, apply alpha, and scale
         for (size_t i = 0; i < 3; ++i)
         {
-            out[i] = static_cast<OutComponentType>(in[i] * outMax * in.a);
+            //out[i] = static_cast<OutComponentType>(in[i] * outMax * in.a);
+            out[i] = static_cast<OutComponentType>(in[i] * outMax);
         }
 
         return out;
@@ -149,7 +150,7 @@ namespace DynamiCL
         size_t halfWidth = halveDimension(width);
 
         // row downsampling kernel
-        Kernel row = {program, "downsample_row", 5, Kernel::Range::DESTINATION};
+        Kernel row = {program, "downsample_row", Kernel::Range::DESTINATION};
 
         // process image with kernel
         PendingImage pendingInterImage =
@@ -164,7 +165,7 @@ namespace DynamiCL
         // Create an output image in compute device
         size_t halfHeight = halveDimension(height);
 
-        Kernel col = {program, "downsample_col", 5, Kernel::Range::DESTINATION};
+        Kernel col = {program, "downsample_col", Kernel::Range::DESTINATION};
         PendingImage downsampled =
             pendingInterImage.process(col, halfWidth, halfHeight);
 
@@ -174,7 +175,7 @@ namespace DynamiCL
          *  Upsample col  *
          ******************/
 
-        Kernel upcol = {program, "upsample_col", 5, Kernel::Range::SOURCE};
+        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
         PendingImage pendingUpCol =
             downsampled.process(upcol, pendingInterImage.image);
 
@@ -184,7 +185,7 @@ namespace DynamiCL
          *  Upsample row  *
          ******************/
 
-        Kernel uprow = {program, "upsample_row", 5, Kernel::Range::SOURCE};
+        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
         PendingImage pendingUpRow =
             pendingUpCol.process(uprow, width, height);
 
@@ -194,7 +195,7 @@ namespace DynamiCL
          *  Create Laplacian  *
          **********************/
 
-        Kernel createLaplacian = {program, "create_laplacian", 1, Kernel::Range::SOURCE};
+        Kernel createLaplacian = {program, "create_laplacian", Kernel::Range::SOURCE};
 
         cl::Image2D laplacianImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
@@ -223,11 +224,84 @@ namespace DynamiCL
         return {std::move(finalResult), std::move(downsampled)};
     }
 
+    
+    PendingImage
+    collapsePyramidLevel(ImagePyramid::LevelPair const& pair,
+                         cl::Program const& program )
+    {
+        ComputeContext const& context = pair.upper.context;
+
+        // get all the dimensions
+        size_t upperWidth  = pair.upper.width();
+        size_t upperHeight = pair.upper.height();
+        size_t lowerWidth  = pair.lower.width();
+        size_t lowerHeight = pair.lower.height();
+
+        /******************
+         *  Upsample col  *
+         ******************/
+
+        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
+        PendingImage pendingUpCol =
+            pair.lower.process(upcol, lowerWidth, upperHeight);
+
+        std::cout << "Upsampled Cols" << std::endl;
+
+        /******************
+         *  Upsample row  *
+         ******************/
+
+        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
+        PendingImage pendingUpRow =
+            pendingUpCol.process(uprow, upperWidth, upperHeight);
+
+        std::cout << "Upsampled Rows" << std::endl;
+
+        /**********************
+         *  Create Laplacian  *
+         **********************/
+
+        Kernel collapse= {program, "collapse_level", Kernel::Range::SOURCE};
+
+        // TODO: add utility function for processing several image
+        // into one output image.
+
+        cl::Image2D collapsedImage(context.context,
+                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                upperWidth,
+                upperHeight);
+
+        cl::Kernel clkernel =
+            collapse.build(pendingUpRow.image,
+                                  pair.upper.image,
+                                  collapsedImage);
+                    
+        cl::Event complete;
+        pendingUpRow.events.insert(end(pendingUpRow.events),
+                                   begin(pair.upper.events),
+                                   end(pair.upper.events));
+
+        context.queue.enqueueNDRangeKernel(clkernel,
+                                   cl::NullRange,
+                                   cl::NDRange(upperWidth, upperHeight),
+                                   cl::NullRange, 
+                                   &pendingUpRow.events,
+                                   &complete);
+
+        PendingImage finalResult(context, collapsedImage);
+        finalResult.events.push_back(complete);
+
+        std::cout << "Created Laplacian" << std::endl;
+
+        return finalResult;
+    }
+
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
     PendingImage calculateQualityCL(PendingImage const& inputImage, cl::Program const& program )
     {
-        Kernel quality = {program, "compute_quality", 5, Kernel::Range::SOURCE};
+        Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
         return inputImage.process(quality);
     }
@@ -245,23 +319,38 @@ namespace DynamiCL
         template <typename InputIt, typename OutputIt>
         void operator() (InputIt cur, InputIt last, OutputIt dest)
         {
+            Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
+
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
+                
+                // create quality mask in image
+                processImageInPlace(*in, quality, context);
 
+                // build pyramid
                 ImagePyramid pyramid(context, *in, 8,
                                      [&](PendingImage const& im)
                                      {
                                         return createPyramidLevel(im, program);
                                      });
 
-                std::vector<FloatImage> levels = pyramid.releaseLevels();
+                auto collapsed = pyramid.collapse(
+                                     [&](ImagePyramid::LevelPair const& pair)
+                                     {
+                                        return collapsePyramidLevel(pair, program);
+                                     });
+
+                *dest = std::make_shared<FloatImage>(std::move(collapsed));
+                dest++;
+
+                //std::vector<FloatImage> levels = pyramid.releaseLevels();
                 
-                for (auto&& level : levels)
-                {
-                    *dest = std::make_shared<FloatImage>(std::move(level));
-                    dest++;
-                }
+                //for (auto&& level : levels)
+                //{
+                    //*dest = std::make_shared<FloatImage>(std::move(level));
+                    //dest++;
+                //}
             }
         }
 
