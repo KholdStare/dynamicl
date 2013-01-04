@@ -141,6 +141,35 @@ __kernel void collapse_level( __read_only image2d_t blurred,
     write_imagef (collapsed, coord, c);
 }
 
+__kernel void fuse_level( __read_only  image3d_t array,
+                          __write_only image2d_t fused)
+{
+    int2 coord = (int2)( get_global_id(0), get_global_id(1) );
+    int depth = get_image_depth(array);
+
+    float4 acc = 0.0f;
+    float weight_sum = 0.0f; // sum of all weights in alpha channel
+
+    for (int i = 0; i < depth; ++i)
+    {
+        int4 array_coord = (int4)(coord.x, coord.y, depth, 0);
+        float4 pix = read_imagef (array, g_sampler, array_coord);
+
+        // accumulate weight
+        weight_sum += pix.s3;
+
+        // multiply by own weight
+        pix  *= pix.s3; 
+
+        acc += pix;
+    }
+
+    // divide by weight sum to normalize
+    acc /= weight_sum;
+
+    write_imagef (fused, coord, acc);
+}
+
 /***************************************************************************
  *                          HDR Quality Measures                           *
  ***************************************************************************/
