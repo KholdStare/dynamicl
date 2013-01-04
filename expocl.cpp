@@ -106,7 +106,7 @@ namespace DynamiCL
         vigra::ImageExportInfo exportInfo(outPath.c_str());
         exportInfo.setFileType("TIFF");
         exportInfo.setPixelType("UINT16");
-        //exportInfo.setCompression("LZW");
+        //exportInfo.setCompression("LZW"); // TODO: major bottleneck
 
         OutImgType out(in.width(), in.height());
 
@@ -249,16 +249,19 @@ namespace DynamiCL
             {
                 std::shared_ptr<FloatImage> in = *cur++;
 
-                PendingImage inputImage = makePendingImage(context, *in);
+                ImagePyramid pyramid(context, *in, 8,
+                                     [&](PendingImage const& im)
+                                     {
+                                        return createPyramidLevel(im, program);
+                                     });
 
-                ImagePyramid::LevelPair pair =
-                    createPyramidLevel( calculateQualityCL(inputImage, program),
-                                        program );
-
-                *dest = makeHostImage<FloatImage::pixel_type>(pair.upper);
-                dest++;
-                *dest = makeHostImage<FloatImage::pixel_type>(pair.lower);
-                dest++;
+                std::vector<FloatImage> levels = pyramid.releaseLevels();
+                
+                for (auto&& level : levels)
+                {
+                    *dest = std::make_shared<FloatImage>(std::move(level));
+                    dest++;
+                }
             }
         }
 

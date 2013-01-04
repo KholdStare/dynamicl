@@ -227,4 +227,28 @@ namespace DynamiCL
                 &this->events);
     }
 
+    ImagePyramid::ImagePyramid( ComputeContext const& context,
+                      image_type& startImage,
+                      size_t numLevels,
+                      NextLevelFunc createNext)
+        : context_(context)
+    {
+        levels_.reserve(numLevels);
+
+        PendingImage image = makePendingImage(context, startImage);
+
+        // create levels one at a time
+        for (size_t level = 1; level < numLevels; ++level)
+        {
+            LevelPair pair = createNext(image);
+
+            levels_.push_back( std::move(*makeHostImage<pixel_type>(pair.upper)) );
+
+            image = std::move(pair.lower);
+        }
+
+        // last level is byproduct of last creation
+        levels_.push_back( std::move(*makeHostImage<pixel_type>(image)) );
+    }
+
 } /* DynamiCL */ 

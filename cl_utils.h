@@ -309,6 +309,9 @@ namespace DynamiCL
     class ImagePyramid
     {
     public:
+        typedef RGBA<float> pixel_type;
+        typedef HostImage<pixel_type> image_type;
+
         /**
          * An image pair, of two levels of a pyramid
          */
@@ -333,10 +336,28 @@ namespace DynamiCL
          */
         typedef std::function< PendingImage(std::vector<PendingImage> const&) > FuseLevelsFunc;
 
+        /**
+         * Construct an image puramid with @a numLevels levels,
+         * from the @a startImage, using a specified NextLevelFunc
+         */
+        ImagePyramid( ComputeContext const& context,
+                      image_type& startImage,
+                      size_t numLevels,
+                      NextLevelFunc);
+
+        /**
+         * Return a vector of all the levels in this image pyramid
+         */
+        std::vector<image_type> const& levels() const { return levels_; }
+
+        std::vector<image_type> releaseLevels() { return std::move(levels_); }
 
     private:
         NextLevelFunc nextLevelFunc;
         CollapseLevelFunc collapseLevelFunc;
+
+        ComputeContext const& context_; ///< context for OpenCL operations
+        std::vector<image_type> levels_;
     };
 
     /***************************************************************************
