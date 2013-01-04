@@ -156,7 +156,15 @@ namespace DynamiCL
         return program;
     }
 
-    PendingImage PendingImage::process(Kernel const& kernel, size_t width, size_t height)
+    PendingImage PendingImage::process(Kernel const& kernel) const
+    {
+        size_t width = this->image.getImageInfo<CL_IMAGE_WIDTH>();
+        size_t height = this->image.getImageInfo<CL_IMAGE_HEIGHT>();
+
+        return this->process(kernel, width, height);
+    }
+
+    PendingImage PendingImage::process(Kernel const& kernel, size_t width, size_t height) const
     {
         // construct a new image
         cl::Image2D resultImage(context.context,
@@ -168,7 +176,7 @@ namespace DynamiCL
         return this->process(kernel, resultImage);
     }
 
-    PendingImage PendingImage::process(Kernel const& kernel, cl::Image2D const& reuseImage)
+    PendingImage PendingImage::process(Kernel const& kernel, cl::Image2D const& reuseImage) const
     {
         // create pending image
         PendingImage result(context, reuseImage);

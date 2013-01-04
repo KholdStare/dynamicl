@@ -134,10 +134,10 @@ namespace DynamiCL
     }
 
     ImagePyramid::LevelPair
-    createPyramidLevel(PendingImage& inputImage,
-                       ComputeContext const& gpu,
+    createPyramidLevel(PendingImage const& inputImage,
                        cl::Program const& program )
     {
+        ComputeContext const& gpu = inputImage.context;
         size_t width = inputImage.width();
         size_t height = inputImage.height();
 
@@ -223,6 +223,15 @@ namespace DynamiCL
         return {std::move(finalResult), std::move(downsampled)};
     }
 
+        // TODO: size may be too large for device
+        // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
+    PendingImage calculateQualityCL(PendingImage const& inputImage, cl::Program const& program )
+    {
+        Kernel quality = {program, "compute_quality", 5, Kernel::Range::SOURCE};
+
+        return inputImage.process(quality);
+    }
+
     /**
      * Function object for merging exposures
      */
@@ -243,8 +252,7 @@ namespace DynamiCL
                 PendingImage inputImage = makePendingImage(context, *in);
 
                 ImagePyramid::LevelPair pair =
-                    createPyramidLevel( inputImage,
-                                        context,
+                    createPyramidLevel( calculateQualityCL(inputImage, program),
                                         program );
 
                 *dest = makeHostImage<FloatImage::pixel_type>(pair.upper);
@@ -255,71 +263,6 @@ namespace DynamiCL
         }
 
     };
-
-    std::shared_ptr< FloatImage >
-    calculateQualityCL(std::shared_ptr< FloatImage > in,
-                       ComputeContext const& gpu,
-                       cl::Program const& program )
-    {
-        using namespace vigra;
-        typedef float InComponentType;
-        typedef TinyVector< InComponentType, 4 > PixelType;
-        typedef BasicImage< PixelType > ImageType;
-
-        // get raw component array from input image
-        InComponentType const* inArray = reinterpret_cast<const InComponentType*>(in->begin());
-        std::cout << "In array:" << std::endl;
-        printN(inArray, 12);
-
-        // create input buffer from input image
-        // TODO: size may be too large for device
-        // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
-        cl::Image2D inputImage(gpu.context,
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR | CL_MEM_HOST_WRITE_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in->width(),
-                in->height(),
-                0,
-                const_cast<InComponentType*>(inArray));
-
-        // Create an output image in compute device
-        cl::Image2D outputImage(gpu.context,
-                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                in->width(),
-                in->height());
-
-        // Kernel for downsampling columns
-        cl::Kernel qualityKernel(program, "compute_quality");
-        qualityKernel.setArg(0, inputImage);
-        qualityKernel.setArg(1, outputImage);
-
-        // Enqueue col kernel
-        cl::Event kernelComplete;
-        gpu.queue.enqueueNDRangeKernel(qualityKernel,
-                                   cl::NullRange,
-                                   cl::NDRange(in->width(), in->height()),
-                                   cl::NullRange, 
-                                   nullptr,
-                                   &kernelComplete);
-
-        // Read the kernel's output back into input image
-        std::vector<cl::Event> waitfor = {kernelComplete};
-        gpu.queue.enqueueReadImage(outputImage,
-                CL_TRUE,
-                VectorConstructor<size_t>::construct(0, 0, 0),
-                VectorConstructor<size_t>::construct(in->width(), in->height(), 1),
-                0,
-                0,
-                const_cast<InComponentType*>(inArray),
-                &waitfor);
-
-        std::cout << "Out array:" << std::endl;
-        printN(inArray, 12);
-
-        return in;
-    }
-
 
 } /* DynamiCL */ 
 
@@ -348,9 +291,12 @@ int main(int argc, char const *argv[])
         };
 
     auto calcQuality =
-        [&]( std::shared_ptr<FloatImage> im )
+        [&]( std::shared_ptr<FloatImage> in ) -> std::shared_ptr<FloatImage>
         {
-            return calculateQualityCL(im, gpu, program);
+            PendingImage inputImage = makePendingImage(gpu, *in);
+
+            PendingImage outputImage = calculateQualityCL(inputImage, program);
+            return makeHostImage<FloatImage::pixel_type>(outputImage);
         };
 
     int currentIndex = 1;
@@ -370,6 +316,7 @@ int main(int argc, char const *argv[])
           >> transformImage
           >> Plumbing::makeIteratorFilter<std::shared_ptr<FloatImage>,
                                           std::shared_ptr<FloatImage>>(mergeHDR{ 3, gpu, program })
+          //>> calcQuality
           >> saveImage;
 
     try

@@ -133,8 +133,9 @@ namespace DynamiCL
         size_t height() const { return this->image.getImageInfo<CL_IMAGE_HEIGHT>(); }
 
         // TODO: can these be const?
-        PendingImage process(Kernel const& kernel, size_t width, size_t height);
-        PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage);
+        PendingImage process(Kernel const& kernel) const; // assumes same dimension
+        PendingImage process(Kernel const& kernel, size_t width, size_t height) const;
+        PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage) const;
 
         /**
          * Read image into host memory
