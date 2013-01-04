@@ -358,23 +358,57 @@ namespace DynamiCL
                       NextLevelFunc);
 
         /**
+         * Create a pyramid from the guts of another.
+         */
+        ImagePyramid( ComputeContext const& context,
+                      std::vector<image_type>&& levels )
+            : context_(context),
+              levels_(std::move(levels))
+        { }
+
+        // disable copying
+        ImagePyramid( ImagePyramid const& other ) = delete;
+        ImagePyramid& operator = ( ImagePyramid const& other ) = delete;
+
+        ImagePyramid( ImagePyramid&& other )
+            : context_(other.context_),
+              levels_(std::move(other.levels_))
+        { }
+
+        ImagePyramid& operator = ( ImagePyramid&& other )
+        {
+            levels_ = std::move(other.levels_);
+        }
+
+        /**
          * Return a vector of all the levels in this image pyramid
          */
         std::vector<image_type> const& levels() const { return levels_; }
 
+        /**
+         * Move the vector of all the levels in this image pyramid out.
+         *
+         * This leaves the pyramid empty. Use this if you want to modify the
+         * individual images in the pyramid.
+         */
         std::vector<image_type> releaseLevels() { return std::move(levels_); }
 
         /**
          * Returns collapsed image from image pyramid.
          *
-         * Pyramid is left empty (no levels)
+         * @note Pyramid is left empty (no levels), to save memory.
          */
         image_type collapse(CollapseLevelFunc);
 
-    private:
-        NextLevelFunc nextLevelFunc;
-        CollapseLevelFunc collapseLevelFunc;
+        /**
+         * Fuses passed-in pyramids into one.
+         *
+         * @note input pyramids are left empty: this frees up memory as soon as
+         * it is not needed.
+         */
+        static ImagePyramid fuse(std::vector<ImagePyramid>& pyramids, FuseLevelsFunc);
 
+    private:
         ComputeContext const& context_; ///< context for OpenCL operations
         std::vector<image_type> levels_;
     };

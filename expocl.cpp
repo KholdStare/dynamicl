@@ -93,6 +93,7 @@ namespace DynamiCL
         // transform using unary function
         std::transform(in.begin(), in.end(), out->begin(),
                        convertPixelToFloat4<InComponentType>);
+        // TODO: huge bottleneck! must improve
 
         return out;
     }
