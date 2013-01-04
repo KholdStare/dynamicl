@@ -13,6 +13,7 @@
 #include <memory>
 #include <array>
 #include <type_traits>
+#include <cassert>
 
 namespace DynamiCL
 {
@@ -191,7 +192,6 @@ namespace DynamiCL
             pixArray_ = nullptr; // don't delete
         }
 
-
     public:
         typedef PixType* iterator;
         typedef PixType const* const_iterator;
@@ -200,6 +200,11 @@ namespace DynamiCL
         HostImage(size_t width, size_t height)
             : dims_({{width, height}}),
               pixArray_(new PixType[width*height])
+        { }
+
+        HostImage(std::array<size_t, N> dims, PixType* data)
+            : dims_(dims),
+              pixArray_(data)
         { }
 
         HostImage(size_t width, size_t height, size_t depth)
@@ -292,6 +297,17 @@ namespace DynamiCL
         void const* rawData() const { return static_cast<void const*>(begin()); }
         void*       rawData()       { return static_cast<void*>(begin()); }
 
+        /**
+         * Release the raw pointer to the pixel data.
+         *
+         * @note Please make sure to know the dimensions before invalidating
+         * this image and pulling out the data.
+         */
+        iterator releaseData() {
+            iterator result = pixArray_;
+            invalidate();
+            return result;
+        }
     };
 
     template <typename PixType, size_t N>
@@ -334,6 +350,26 @@ namespace DynamiCL
     {
         PendingImage clImage = makePendingImage(context, image);
         clImage.process(kernel).readInto(image.rawData());
+    }
+
+    /**
+     * Transfer data from one image into another, but reduce
+     * dimensionality.
+     *
+     * i.e. 3D image becomes 2D, where the last dimensions is
+     * a collapsing of two- 3x4x5 -> 3x20
+     */
+    template <typename PixType, size_t N>
+    HostImage<PixType, N-1>
+    collapseDimension(HostImage<PixType, N>& image)
+    {
+        // create colapsed dimensions
+        std::array<size_t, N-1> dims;
+        std::copy_n(image.dimensions().begin(), N-1, dims.begin());
+        dims[N-2] *= image.dimensions()[N-1];
+
+        // transfer image data
+        return HostImage<PixType, N-1>(dims, image.releaseData());
     }
 
     template <typename PixType>

@@ -352,6 +352,9 @@ namespace DynamiCL
             std::vector<image_type> singleLevel = std::move(levelCollection.back());
             levelCollection.pop_back();
 
+            // create contiguous image array in memory
+            HostImage<pixel_type, 3> levelArray(singleLevel);
+            singleLevel.clear(); // deallocate subimages
 
         }
 

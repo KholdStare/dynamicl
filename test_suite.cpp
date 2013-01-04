@@ -127,6 +127,18 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
     BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
                                   imageArray.begin(), imageArray.end());
 
+
+    // collapse dimension
+    HostImage<PixType, 2> collapsed = collapseDimension(imageArray);
+    BOOST_CHECK_EQUAL( imageArray.valid(), false );
+    BOOST_CHECK_EQUAL( imageArray.totalSize(), 0 );
+    BOOST_CHECK_EQUAL( collapsed.valid(), true );
+    BOOST_CHECK_EQUAL( collapsed.totalSize(), total );
+    BOOST_CHECK_EQUAL( collapsed.width(), width );
+    BOOST_CHECK_EQUAL( collapsed.height(), height*depth );
+    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
+                                  collapsed.begin(), collapsed.end());
+
 }
 
 BOOST_AUTO_TEST_SUITE_END()
