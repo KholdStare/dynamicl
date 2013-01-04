@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <iostream>
+#include <cassert>
 
 namespace
 {
@@ -289,6 +290,71 @@ namespace DynamiCL
 
         result.readInto(lower.rawData());
         return lower;
+    }
+
+    ImagePyramid ImagePyramid::fuse(std::vector<ImagePyramid>& pyramids,
+                                    FuseLevelsFunc fuseLevels)
+    {
+        size_t numPyramids = pyramids.size();
+        assert (numPyramids > 1); // need to merge more than one
+
+        ComputeContext const& context = pyramids.at(0).context_;
+        size_t numLevels = pyramids[0].levels().size();
+
+        // TODO: make sure all pyramids have the same number of levels
+        // and dimensions
+
+        // outer vector: element is pyramid
+        // inner vector: element is a level
+        std::vector<std::vector<image_type>> pyramidGuts;
+
+        // extract guts from pyramids
+        for (ImagePyramid& pyramid : pyramids)
+        {
+            // ensure all pyramids have the same number of levels
+            assert( pyramid.levels().size() == numLevels );
+
+            pyramidGuts.push_back(pyramid.releaseLevels());
+        }
+
+        // outer vector: represents collection of levels
+        // inner vector: single level from all pyramids
+        std::vector<std::vector<image_type>> levelCollection(numLevels);
+
+        // rearrange so that each inner vector
+        // has all images of a particular level from all pyramids
+        for (size_t level = 0; level < numLevels; ++level)
+        {
+            for (std::vector<image_type>& pyramid : pyramidGuts)
+            {
+                levelCollection[level].push_back( std::move(pyramid.back()) );
+                pyramid.pop_back();
+            }
+        }
+
+        // pyramid guts should be empty
+        for (std::vector<image_type>& pyramid : pyramidGuts)
+        {
+            assert( pyramid.empty() );
+        }
+
+        // levelCollection starts with last (smallest level),
+        // and increases from there
+        assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
+
+        // ===================================================
+        // now we can fuse each level individually
+        std::vector<image_type> fusedLevels;
+
+        while(!levelCollection.empty())
+        {
+            // these image have to be fused
+            std::vector<image_type> singleLevel = std::move(levelCollection.back());
+            levelCollection.pop_back();
+
+
+        }
+
     }
 
 } /* DynamiCL */ 

@@ -8,8 +8,10 @@
 #include <CL/cl.hpp>
 #endif
 
+#include <algorithm>
 #include <functional>
 #include <memory>
+#include <array>
 
 namespace DynamiCL
 {
@@ -166,11 +168,12 @@ namespace DynamiCL
         component_type const& operator[]( size_t i ) const { return components[i]; }
     };
 
-    template <typename PixType>
+    template <typename PixType, size_t N>
     class HostImage
     {
-        size_t width_;
-        size_t height_;
+        static_assert( N >= 1, "An image has to have at least one dimension." );
+
+        std::array<size_t, N> dims_;
         PixType* pixArray_;
 
         void dealloc()
@@ -180,9 +183,13 @@ namespace DynamiCL
 
         void invalidate()
         {
-            width_ =  0;
-            height_ = 0;
+            std::fill_n(dims_.begin(), N, 0);
             pixArray_ = nullptr; // don't delete
+        }
+
+        size_t totalSize() const
+        {
+            return std::accumulate(dims_.begin(), dims_.end(), 1, std::multiplies<size_t>());
         }
 
     public:
@@ -191,18 +198,16 @@ namespace DynamiCL
         typedef PixType pixel_type;
 
         HostImage(size_t width, size_t height)
-            : width_(width),
-              height_(height),
+            : dims_({{width, height}}),
               pixArray_(new PixType[width*height])
         { }
 
         ~HostImage() { dealloc(); }
 
         HostImage()
-            : width_(0),
-              height_(0),
-              pixArray_(nullptr)
-        { }
+        { 
+            invalidate();
+        }
 
         // disable copying because expensive
         HostImage(HostImage const& other) = delete;
@@ -210,8 +215,7 @@ namespace DynamiCL
 
         // move constructor
         HostImage(HostImage&& other)
-            : width_(other.width_),
-              height_(other.height_),
+            : dims_(std::move(other.dims_)),
               pixArray_(other.pixArray_)
         {
             other.invalidate();
@@ -220,24 +224,33 @@ namespace DynamiCL
         // move assignment
         HostImage& operator =(HostImage&& other)
         {
-            width_ = other.width_;
-            height_ = other.height_;
+            std::copy_n(other.dims_.begin(), N, dims_.begin());
+            //width_ = other.width_;
+            //height_ = other.height_;
             pixArray_ = other.pixArray_;
 
             other.invalidate();
         }
 
-        size_t width() const { return width_; }
-        size_t height() const { return height_; }
+        size_t width() const { return dims_[0]; }
+        size_t height() const { return dims_[1]; }
+        size_t depth() const { return dims_[2]; }
 
         /**
          * Return whether the image is valid
          */
         bool valid()
         {
-            return ( pixArray_ != nullptr )
-                   && width_ != 0
-                   && height_ != 0;
+            // check dimensions
+            for (size_t n = 0; n < N; ++n)
+            {
+                if (dims_[n] == 0)
+                {
+                    return false;
+                }
+            }
+            // check nullptr
+            return pixArray_ != nullptr;
         }
 
         operator bool()
@@ -248,21 +261,15 @@ namespace DynamiCL
         // iterators
 
         iterator begin() { return pixArray_; }
-        iterator end()   { return pixArray_ + (width_ * height_); }
+        iterator end()   { return pixArray_ + totalSize(); }
 
         const_iterator begin() const { return pixArray_; }
-        const_iterator end()   const { return pixArray_ + (width_ * height_); }
+        const_iterator end()   const { return pixArray_ + totalSize(); }
         const_iterator cbegin() const { return begin(); }
         const_iterator cend()   const { return end(); }
 
         void const* rawData() const { return static_cast<void const*>(begin()); }
         void*       rawData()       { return static_cast<void*>(begin()); }
-
-        /**
-         * Row major indexing. so image[y][x]
-         */
-        iterator       operator[]( size_t y )       { return pixArray_ + y*width_; }
-        const_iterator operator[]( size_t y ) const { return pixArray_ + y*width_; }
 
     };
 
@@ -271,7 +278,7 @@ namespace DynamiCL
      * it inplace using an OpenCL kernel.
      */
     template <typename PixType>
-    void processImageInPlace(HostImage<PixType>& image,
+    void processImageInPlace(HostImage<PixType, 2>& image,
                               Kernel const& kernel,
                               ComputeContext const& context)
     {
@@ -280,10 +287,10 @@ namespace DynamiCL
     }
 
     template <typename PixType>
-    std::shared_ptr<HostImage<PixType>>
+    std::shared_ptr<HostImage<PixType, 2>>
     makeHostImage(PendingImage const& pending)
     {
-        typedef HostImage<PixType> image_type;
+        typedef HostImage<PixType, 2> image_type;
         auto out = std::make_shared<image_type>( pending.width(), pending.height() );
         pending.readInto(out->rawData());
 
@@ -292,7 +299,7 @@ namespace DynamiCL
 
     template <typename PixType>
     PendingImage
-    makePendingImage(ComputeContext const& context, HostImage<PixType> const& image)
+    makePendingImage(ComputeContext const& context, HostImage<PixType, 2> const& image)
     {
         cl::Image2D clInputImage(context.context,
                 CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -322,7 +329,7 @@ namespace DynamiCL
     {
     public:
         typedef RGBA<float> pixel_type;
-        typedef HostImage<pixel_type> image_type;
+        typedef HostImage<pixel_type, 2> image_type;
 
         /**
          * An image pair, of two levels of a pyramid

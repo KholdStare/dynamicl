@@ -16,7 +16,7 @@
 
 namespace DynamiCL
 {
-    typedef HostImage<RGBA<float>> FloatImage;
+    typedef HostImage<RGBA<float>, 2> FloatImage;
         
     std::shared_ptr< vigra::BasicImage< vigra::RGBValue< vigra::UInt8 >>>
     loadImage(std::string const& path)
