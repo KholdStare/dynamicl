@@ -117,6 +117,7 @@ namespace DynamiCL
             image = std::move(other.image);
             events = std::move(other.events);
             other.image = cl::Image2D();
+            return *this;
         }
 
         PendingImage(ComputeContext const& c)
@@ -246,6 +247,7 @@ namespace DynamiCL
             pixArray_ = other.pixArray_;
 
             other.invalidate();
+            return *this;
         }
 
         size_t width() const { return dims_[0]; }
@@ -383,6 +385,23 @@ namespace DynamiCL
         return out;
     }
 
+    //template <typename PixType>
+    //PendingImage
+    //makePendingImage(ComputeContext const& context, HostImage<PixType, 2> const& image)
+    //{
+        //cl::Image2D clInputImage(context.context,
+                //CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                //cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: not hardcode?
+                //image.width(),
+                //image.height(),
+                //0,
+                //const_cast<void*>(image.rawData()));
+
+        //PendingImage out(context, clInputImage);
+
+        //return out;
+    //}
+
     template <typename PixType>
     PendingImage
     makePendingImage(ComputeContext const& context, HostImage<PixType, 2> const& image)
@@ -439,7 +458,7 @@ namespace DynamiCL
         /**
          * Fuses several pyramids at a single layer
          */
-        typedef std::function< PendingImage(std::vector<PendingImage> const&) > FuseLevelsFunc;
+        typedef std::function< PendingImage(PendingImage const&) > FuseLevelsFunc;
 
         /**
          * Construct an image puramid with @a numLevels levels,
@@ -471,6 +490,7 @@ namespace DynamiCL
         ImagePyramid& operator = ( ImagePyramid&& other )
         {
             levels_ = std::move(other.levels_);
+            return *this;
         }
 
         /**

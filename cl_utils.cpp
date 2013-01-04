@@ -127,8 +127,8 @@ namespace DynamiCL
     { }
 
     DeviceCapabilities::DeviceCapabilities(cl::Device device)
-        : maxAllocSize(device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()),
-          memSize(device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>())
+        : memSize(device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>()),
+          maxAllocSize(device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>())
     {
         // TODO: find device capabilities
         std::cout << "Max Size: " << memSize << std::endl;
@@ -317,6 +317,8 @@ namespace DynamiCL
             pyramidGuts.push_back(pyramid.releaseLevels());
         }
 
+        return ImagePyramid(context, std::move(pyramidGuts[0]));
+
         // outer vector: represents collection of levels
         // inner vector: single level from all pyramids
         std::vector<std::vector<image_type>> levelCollection(numLevels);
@@ -357,6 +359,7 @@ namespace DynamiCL
             singleLevel.clear(); // deallocate subimages
 
         }
+
 
     }
 

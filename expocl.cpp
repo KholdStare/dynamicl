@@ -236,7 +236,6 @@ namespace DynamiCL
         size_t upperWidth  = pair.upper.width();
         size_t upperHeight = pair.upper.height();
         size_t lowerWidth  = pair.lower.width();
-        size_t lowerHeight = pair.lower.height();
 
         /******************
          *  Upsample col  *
@@ -298,6 +297,50 @@ namespace DynamiCL
         return finalResult;
     }
 
+    PendingImage
+    fusePyramidLevel(PendingImage const& array,
+                         cl::Program const& program )
+    {
+        ComputeContext const& context = array.context;
+
+        // get all the dimensions
+        size_t width  = array.width();
+        size_t height = array.height();
+
+        /********************
+         *  Fuse the level  *
+         ********************/
+
+        cl::Image2D resultImage(context.context,
+                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+                cl::ImageFormat(CL_RGBA, CL_FLOAT),
+                width,
+                height);
+
+        Kernel kernel = {program, "fuse_level", Kernel::Range::DESTINATION};
+        cl::Kernel clkernel = kernel.build(array.image, resultImage);
+
+        //PendingImage fused =
+            //array.process(fuse, width, height);
+
+        std::cout << "MERGING LEVEL :"
+                  << width  << " x "
+                  << height << std::endl;
+
+        cl::Event complete;
+        context.queue.enqueueNDRangeKernel(clkernel,
+                                   cl::NullRange,
+                                   cl::NDRange(width, height, 1),
+                                   cl::NullRange, 
+                                   &array.events,
+                                   &complete);
+
+        PendingImage fused(context, resultImage);
+        fused.events.push_back(complete);
+
+        return fused;
+    }
+
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
     PendingImage calculateQualityCL(PendingImage const& inputImage, cl::Program const& program )
@@ -322,36 +365,79 @@ namespace DynamiCL
         {
             Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
+            std::vector<ImagePyramid> subpyramids;
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
                 
                 // create quality mask in image
+                std::cout << "========================\n"
+                             "Creating Quality Mask.\n"
+                             "========================"
+                          << std::endl;
                 processImageInPlace(*in, quality, context);
 
                 // build pyramid
+                std::cout << "========================\n"
+                             "Creating Pyramid.\n"
+                             "========================"
+                          << std::endl;
                 ImagePyramid pyramid(context, *in, 8,
                                      [&](PendingImage const& im)
                                      {
                                         return createPyramidLevel(im, program);
                                      });
 
-                auto collapsed = pyramid.collapse(
-                                     [&](ImagePyramid::LevelPair const& pair)
-                                     {
-                                        return collapsePyramidLevel(pair, program);
-                                     });
+                // move pyramid into local collection
+                subpyramids.push_back(std::move(pyramid));
 
-                *dest = std::make_shared<FloatImage>(std::move(collapsed));
-                dest++;
+                // as soon as we can merge, do so
+                if (subpyramids.size() == 3)
+                {
+                    std::cout << "========================\n"
+                                 "Fusing Pyramids.\n"
+                                 "========================"
+                              << std::endl;
+                    ImagePyramid fused =
+                        ImagePyramid::fuse(subpyramids,
+                            [&](PendingImage const& im)
+                            {
+                                return fusePyramidLevel(im, program);
+                            });
+                    subpyramids.clear();
 
-                //std::vector<FloatImage> levels = pyramid.releaseLevels();
-                
-                //for (auto&& level : levels)
+                    std::cout << "========================\n"
+                                 "Collapsing Pyramid.\n"
+                                 "========================"
+                              << std::endl;
+                    FloatImage collapsed =
+                        fused.collapse(
+                            [&](ImagePyramid::LevelPair const& pair)
+                            {
+                                return collapsePyramidLevel(pair, program);
+                            });
+
+                    std::cout << "========================\n"
+                                 "HDR Merge complete.\n"
+                                 "========================"
+                              << std::endl;
+                    *dest = std::make_shared<FloatImage>(std::move(collapsed));
+                    dest++;
+                    std::cout << std::endl;
+                }
+
+                //if (subimages.size() == 3)
                 //{
-                    //*dest = std::make_shared<FloatImage>(std::move(level));
+                    //HostImage<RGBA<float>, 3> array(subimages);
+                    //subimages.clear();
+
+                    //FloatImage collapsed = collapseDimension(array);
+                    //*dest = std::make_shared<FloatImage>(std::move(collapsed));
                     //dest++;
                 //}
+
+                //*dest = std::make_shared<FloatImage>(std::move(collapsed));
+                //dest++;
             }
         }
 
@@ -383,14 +469,14 @@ int main(int argc, char const *argv[])
             return transformToFloat4(*im);
         };
 
-    auto calcQuality =
-        [&]( std::shared_ptr<FloatImage> in ) -> std::shared_ptr<FloatImage>
-        {
-            PendingImage inputImage = makePendingImage(gpu, *in);
+    //auto calcQuality =
+        //[&]( std::shared_ptr<FloatImage> in ) -> std::shared_ptr<FloatImage>
+        //{
+            //PendingImage inputImage = makePendingImage(gpu, *in);
 
-            PendingImage outputImage = calculateQualityCL(inputImage, program);
-            return makeHostImage<FloatImage::pixel_type>(outputImage);
-        };
+            //PendingImage outputImage = calculateQualityCL(inputImage, program);
+            //return makeHostImage<FloatImage::pixel_type>(outputImage);
+        //};
 
     int currentIndex = 1;
     auto saveImage =
