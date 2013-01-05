@@ -51,10 +51,28 @@ namespace DynamiCL
         size_t width() const { return this->image.getImageInfo<CL_IMAGE_WIDTH>(); }
         size_t height() const { return this->image.getImageInfo<CL_IMAGE_HEIGHT>(); }
 
-        // TODO: can these be const?
+        /**
+         * Process this image using the passed kernel,
+         * storing the result in @a reuseImage, with global range
+         * 
+         * @note Most specified overload
+         */
+        PendingImage process(Kernel const& kernel,
+                             climage_type const& reuseImage,
+                             cl::NDRange const& kernelRange) const;
+
+        PendingImage process(Kernel const& kernel,
+                             std::array<size_t, N> const& dims,
+                             cl::NDRange const& kernelRange) const;
+
+        PendingImage process(Kernel const& kernel,
+                             climage_type const& reuseImage) const;
+
+        PendingImage process(Kernel const& kernel,
+                             std::array<size_t, N> const& dims) const;
+
         PendingImage process(Kernel const& kernel) const; // assumes same dimension
-        PendingImage process(Kernel const& kernel, std::array<size_t, N> const& dims) const;
-        PendingImage process(Kernel const& kernel, climage_type const& reuseImage) const;
+
 
         /**
          * Read image into host memory

@@ -49,14 +49,19 @@ namespace DynamiCL
 
     namespace detail
     {
+        //template <typename T>
+        //struct is_array : std::false_type {};
+
+        //template <typename T, size_t N>
+        //struct is_array<std::array<T, N>> : std::true_type {};
+
         template<typename Vec>
-        void
-        vector_constructor_impl(Vec& vec)
+        void vector_constructor_impl(Vec& vec)
         { }
 
+        // only works for non-array arguments
         template<typename Vec, typename U, typename... Us>
-        void
-        vector_constructor_impl(Vec& vec, U&& first, Us&&... rest)
+        void vector_constructor_impl(Vec& vec, U&& first, Us&&... rest)
         {
             vec.push_back(std::forward<U>(first));
             vector_constructor_impl(vec, std::forward<Us>(rest)...);
@@ -223,7 +228,6 @@ namespace DynamiCL
 
         std::array<size_t, N> dims;
 
-        //size_t wololo = image.getImageInfo<CL_IMAGE_WIDTH>();
         dims[0] = image.template getImageInfo<CL_IMAGE_WIDTH>();
 
         if ( N > 1 )
@@ -252,6 +256,33 @@ namespace DynamiCL
     inline cl::NDRange toNDRange(std::array<size_t, 3> dims)
     {
         return cl::NDRange(dims[0], dims[1], dims[2]);
+    }
+
+    /**
+     * Take an array and fills a cl::size_t<3> vector with its values, and any
+     * remaining spots are filled with @a fillValue.
+     *
+     * Useful for enqueueReads in OpenCL.
+     */
+    template <size_t N>
+    inline cl::size_t<3> toSizeVector(std::array<size_t, N> const& dims, size_t fillValue = 0)
+    {
+        static_assert( N <= 3, "Array dimensions must not exceed 3." );
+
+        cl::size_t<3> vec;
+        // TODO: OpenCL cpp headers don't have the right typedefs
+        // to be able to use stl algorithms, so have to do things manually...
+        size_t i = 0;
+        for (; i < N; ++i)
+        {
+            vec.push_back(dims[i]);
+        }
+        for (; i < 3; ++i)
+        {
+            vec.push_back(fillValue);
+        }
+
+        return vec;
     }
 
 }
