@@ -9,8 +9,9 @@ env.Append(LIBS = [ 'pthread',
             'vigraimpex' ])
 
 # debugging flags
-env.Append(CPPFLAGS =  [ '-g', '-pg' ])
-env.Append(LINKFLAGS = [ '-g', '-pg' ])
+debugflags = [ '-g', '-pg' ]
+env.Append(CPPFLAGS =  debugflags)
+env.Append(LINKFLAGS = debugflags)
 	
 bits = 'x86_64'
 if platform.machine() != bits:
@@ -21,7 +22,11 @@ if os.environ['AMDAPPSDKROOT']:
     env.Append(CPPPATH = [ sdkroot + '/include' ])
     env.Append(LIBPATH = [ sdkroot + '/lib/' + bits ])
 
-commonSource = ['utils.cpp', 'cl_utils.cpp']
+commonSource = ['utils.cpp',
+                'cl_common.cpp',
+                'cl_utils.cpp',
+                'pending_image.cpp',
+                'image_pyramid.cpp']
 mainSource = ['expocl.cpp']
 testSource = ['test_suite.cpp']
 

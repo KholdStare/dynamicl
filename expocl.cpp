@@ -11,6 +11,7 @@
 
 #include "cl_utils.h"
 #include "utils.h"
+#include "image_pyramid.h"
 
 #include "plumbingplusplus/plumbing.hpp"
 
