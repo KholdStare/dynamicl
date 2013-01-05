@@ -37,6 +37,11 @@ namespace DynamiCL
         typedef PixType const* const_iterator;
         typedef PixType pixel_type;
 
+        HostImage(std::array<size_t, N> dims)
+            : dims_(dims),
+              pixArray_(new PixType[totalSize()])
+        { }
+
         HostImage(size_t width, size_t height)
             : dims_({{width, height}}),
               pixArray_(new PixType[width*height])

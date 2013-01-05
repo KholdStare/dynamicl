@@ -148,11 +148,11 @@ namespace DynamiCL
         size_t halfWidth = halveDimension(width);
 
         // row downsampling kernel
-        Kernel row = {2, program, "downsample_row", Kernel::Range::DESTINATION};
+        Kernel row = {program, "downsample_row", Kernel::Range::DESTINATION};
 
         // process image with kernel
         Pending2DImage pendingInterImage =
-            inputImage.process(row, {{ halfWidth, height }});
+            inputImage.process<cl::Image2D>(row, {{ halfWidth, height }});
 
         std::cout << "Downsampled Rows" << std::endl;
 
@@ -163,9 +163,9 @@ namespace DynamiCL
         // Create an output image in compute device
         size_t halfHeight = halveDimension(height);
 
-        Kernel col = {2, program, "downsample_col", Kernel::Range::DESTINATION};
+        Kernel col = {program, "downsample_col", Kernel::Range::DESTINATION};
         Pending2DImage downsampled =
-            pendingInterImage.process(col, {{halfWidth, halfHeight}});
+            pendingInterImage.process<cl::Image2D>(col, {{halfWidth, halfHeight}});
 
         std::cout << "Downsampled Cols" << std::endl;
 
@@ -173,7 +173,7 @@ namespace DynamiCL
          *  Upsample col  *
          ******************/
 
-        Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
+        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
         Pending2DImage pendingUpCol =
             downsampled.process(upcol, pendingInterImage.image);
 
@@ -183,9 +183,9 @@ namespace DynamiCL
          *  Upsample row  *
          ******************/
 
-        Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
+        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
         Pending2DImage pendingUpRow =
-            pendingUpCol.process(uprow, {{width, height}});
+            pendingUpCol.process<cl::Image2D>(uprow, {{width, height}});
 
         std::cout << "Upsampled Rows" << std::endl;
 
@@ -193,7 +193,7 @@ namespace DynamiCL
          *  Create Laplacian  *
          **********************/
 
-        Kernel createLaplacian = {2, program, "create_laplacian", Kernel::Range::SOURCE};
+        Kernel createLaplacian = {program, "create_laplacian", Kernel::Range::SOURCE};
 
         cl::Image2D laplacianImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
@@ -238,9 +238,9 @@ namespace DynamiCL
          *  Upsample col  *
          ******************/
 
-        Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
+        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
         Pending2DImage pendingUpCol =
-            pair.lower.process(upcol, {{lowerWidth, upperHeight}});
+            pair.lower.process<cl::Image2D>(upcol, {{lowerWidth, upperHeight}});
 
         std::cout << "Upsampled Cols" << std::endl;
 
@@ -248,9 +248,9 @@ namespace DynamiCL
          *  Upsample row  *
          ******************/
 
-        Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
+        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
         Pending2DImage pendingUpRow =
-            pendingUpCol.process(uprow, {{upperWidth, upperHeight}});
+            pendingUpCol.process<cl::Image2D>(uprow, {{upperWidth, upperHeight}});
 
         std::cout << "Upsampled Rows" << std::endl;
 
@@ -258,7 +258,7 @@ namespace DynamiCL
          *  Create Laplacian  *
          **********************/
 
-        Kernel collapse= {2, program, "collapse_level", Kernel::Range::SOURCE};
+        Kernel collapse= {program, "collapse_level", Kernel::Range::SOURCE};
 
         // TODO: add utility function for processing several image
         // into one output image.
@@ -314,7 +314,7 @@ namespace DynamiCL
                 width,
                 height);
 
-        Kernel kernel = {3, program, "fuse_level", Kernel::Range::DESTINATION};
+        Kernel kernel = {program, "fuse_level", Kernel::Range::DESTINATION};
         cl::Kernel clkernel = kernel.build(array.image, resultImage);
 
         //Pending2DImage fused =
@@ -354,7 +354,7 @@ namespace DynamiCL
         template <typename InputIt, typename OutputIt>
         void operator() (InputIt cur, InputIt last, OutputIt dest)
         {
-            Kernel quality = {2, program, "compute_quality", Kernel::Range::SOURCE};
+            Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
             std::vector<ImagePyramid> subpyramids;
             while(cur != last)

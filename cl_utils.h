@@ -39,30 +39,6 @@ namespace DynamiCL
         component_type const& operator[]( size_t i ) const { return components[i]; }
     };
 
-    /**
-     * Takes an image currently on the host, and transforms
-     * it inplace using an OpenCL kernel.
-     */
-    template <typename PixType>
-    void processImageInPlace(HostImage<PixType, 2>& image,
-                              Kernel const& kernel,
-                              ComputeContext const& context)
-    {
-        Pending2DImage clImage = makePendingImage(context, image);
-        clImage.process(kernel).readInto(image.rawData());
-    }
-
-    template <typename PixType>
-    std::shared_ptr<HostImage<PixType, 2>>
-    makeHostImage(Pending2DImage const& pending)
-    {
-        typedef HostImage<PixType, 2> image_type;
-        auto out = std::make_shared<image_type>( pending.width(), pending.height() );
-        pending.readInto(out->rawData());
-
-        return out;
-    }
-
     namespace detail
     {
 
@@ -87,6 +63,33 @@ namespace DynamiCL
             typedef cl::Image3D climage_type;
         };
 
+    }
+
+    /**
+     * Takes an image currently on the host, and transforms
+     * it inplace using an OpenCL kernel.
+     */
+    template <typename PixType, size_t N>
+    void processImageInPlace(HostImage<PixType, N>& image,
+                              Kernel const& kernel,
+                              ComputeContext const& context)
+    {
+        makePendingImage(context, image)
+            .process(kernel)
+            .readInto(image.rawData());
+    }
+
+    template <typename PixType, typename CLImage>
+    std::shared_ptr<HostImage<PixType, detail::image_traits<CLImage>::N>>
+    makeHostImage(PendingImage<CLImage> const& pending)
+    {
+        static const size_t N = detail::image_traits<CLImage>::N;
+        typedef HostImage<PixType, N> image_type;
+
+        auto out = std::make_shared<image_type>(pending.dimensions());
+        pending.readInto(out->rawData());
+
+        return out;
     }
 
     template <typename PixType, size_t N>

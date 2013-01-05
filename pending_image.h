@@ -8,8 +8,17 @@ namespace DynamiCL
 {
 
     /**
+     * A type trait to see if a type is a pending image.
+     */
+    template <typename T>
+    struct is_pending_image : std::false_type { };
+
+    template <typename CLImage>
+    struct is_pending_image<PendingImage<CLImage>> : std::true_type { };
+
+    /**
      * Represents an image that is currently being processed.
-     * think of it as "std::future<Image>" but for OpenCL
+     * Think of it as "std::future<Image>" but for OpenCL
      */
     template <typename CLImage>
     struct PendingImage
@@ -19,7 +28,7 @@ namespace DynamiCL
 
         ComputeContext const& context;
         climage_type image;
-        std::vector<cl::Event> events; // TODO: const?
+        std::vector<cl::Event> events;
 
         PendingImage(PendingImage&& other)
             : context(other.context),
@@ -64,21 +73,85 @@ namespace DynamiCL
          * 
          * @note Most specified overload
          */
-        PendingImage process(Kernel const& kernel,
-                             climage_type const& reuseImage,
-                             cl::NDRange const& kernelRange) const;
+        template <typename CLImage2>
+        PendingImage<CLImage2>
+        process(Kernel const& kernel,
+                CLImage2 const& reuseImage,
+                cl::NDRange const& kernelRange) const
+        {
+            // create pending image
+            PendingImage result(context, reuseImage);
 
+            // create a kernel with that image
+            cl::Kernel clkernel = kernel.build(this->image, result.image);
+
+            // enqueue kernel computation
+            cl::Event complete;
+            context.queue.enqueueNDRangeKernel(clkernel,
+                                       cl::NullRange,
+                                       kernelRange,
+                                       cl::NullRange, 
+                                       &this->events,
+                                       &complete);
+
+            result.events.push_back(complete);
+
+            return result;
+        }
+
+        /**
+         * Process this image with the specified kernel, reusing the 
+         * specified image @a reuseImage for the result.
+         */
         PendingImage process(Kernel const& kernel,
                              std::array<size_t, N> const& dims,
                              cl::NDRange const& kernelRange) const;
 
-        PendingImage process(Kernel const& kernel,
-                             climage_type const& reuseImage) const;
+        /**
+         * Process this image with the specified kernel, reusing the specified
+         * image @a reuseImage for the result.
+         *
+         * @note Range of kernel application is derived from the dimensions of
+         * either the source or destination image (specified in the kernel).
+         */
+        template <typename CLImage2>
+        PendingImage<CLImage2>
+        process(Kernel const& kernel, CLImage2 const& reuseImage) const
+        {
+            // figure out range of kernel
+            cl::NDRange kernelRange;
+            if (kernel.range == Kernel::Range::SOURCE)
+            {
+                kernelRange = toNDRange(this->dimensions());
+            }
+            else
+            {
+                kernelRange = toNDRange(getDims(reuseImage));
+            }
 
-        PendingImage process(Kernel const& kernel,
-                             std::array<size_t, N> const& dims) const;
+            return process(kernel, reuseImage, kernelRange);
+        }
 
-        PendingImage process(Kernel const& kernel) const; // assumes same dimension
+        /**
+         * Process this image with the specified kernel, and create a new
+         * image of type CLImage2, and dimensions @a dims.
+         */
+        template <typename CLImage2>
+        PendingImage<CLImage2>
+        process(Kernel const& kernel,
+                std::array<size_t, detail::image_traits<CLImage2>::N> const& dims) const
+        {
+            // construct a new image
+            auto image = createCLImage<CLImage2>(context, dims);
+
+            return this->process(kernel, image);
+        }
+
+        /**
+         * Process this image with the specified kernel, creating a new image
+         * of the same dimensions.
+         */
+        PendingImage process(Kernel const& kernel) const;
 
 
         /**
@@ -92,20 +165,12 @@ namespace DynamiCL
     template <typename CLImage>
     PendingImage<CLImage> PendingImage<CLImage>::process(Kernel const& kernel) const
     {
-        return this->process(kernel, getDims<climage_type>(this->image));
+        return this->process<CLImage>(kernel, getDims<climage_type>(this->image));
     }
 
     template <typename CLImage>
-    PendingImage<CLImage> PendingImage<CLImage>::process(Kernel const& kernel, std::array<size_t, N> const& dims) const
-    {
-        // construct a new image
-        auto image = createCLImage<climage_type>(context, dims);
-
-        return this->process(kernel, image);
-    }
-
-    template <typename CLImage>
-    PendingImage<CLImage> PendingImage<CLImage>::process(Kernel const& kernel,
+    PendingImage<CLImage>
+    PendingImage<CLImage>::process(Kernel const& kernel,
                          std::array<size_t, N> const& dims,
                          cl::NDRange const& kernelRange) const
     {
@@ -113,50 +178,6 @@ namespace DynamiCL
         auto image = createCLImage<climage_type>(context, dims);
 
         return this->process(kernel, image, kernelRange);
-    }
-
-    template <typename CLImage>
-    PendingImage<CLImage> PendingImage<CLImage>::process(Kernel const& kernel, climage_type const& reuseImage) const
-    {
-        // figure out range of kernel
-        climage_type const* rangeGuide; // which image do we get the range from
-        if (kernel.range == Kernel::Range::SOURCE)
-        {
-            rangeGuide = &this->image;
-        }
-        else
-        {
-            rangeGuide = &reuseImage;
-        }
-
-        cl::NDRange kernelRange = toNDRange(getDims(*rangeGuide));
-
-        return process(kernel, reuseImage, kernelRange);
-    }
-
-    template <typename CLImage>
-    PendingImage<CLImage> PendingImage<CLImage>::process(Kernel const& kernel,
-                         climage_type const& reuseImage,
-                         cl::NDRange const& kernelRange) const
-    {
-        // create pending image
-        PendingImage result(context, reuseImage);
-
-        // create a kernel with that image
-        cl::Kernel clkernel = kernel.build(this->image, result.image);
-
-        // enqueue kernel computation
-        cl::Event complete;
-        context.queue.enqueueNDRangeKernel(clkernel,
-                                   cl::NullRange,
-                                   kernelRange,
-                                   cl::NullRange, 
-                                   &this->events,
-                                   &complete);
-
-        result.events.push_back(complete);
-
-        return result;
     }
 
     template <typename CLImage>

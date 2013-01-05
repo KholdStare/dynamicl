@@ -49,11 +49,6 @@ namespace DynamiCL
 
     namespace detail
     {
-        //template <typename T>
-        //struct is_array : std::false_type {};
-
-        //template <typename T, size_t N>
-        //struct is_array<std::array<T, N>> : std::true_type {};
 
         template<typename Vec>
         void vector_constructor_impl(Vec& vec)

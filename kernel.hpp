@@ -20,7 +20,6 @@ namespace DynamiCL
             DESTINATION
         };
 
-        const size_t dims; ///< number of dimensions
         cl::Program const& program;
         char const* name;
         Range const range;
