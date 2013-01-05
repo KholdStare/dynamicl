@@ -10,7 +10,7 @@ namespace DynamiCL
     {
         levels_.reserve(numLevels);
 
-        PendingImage image = makePendingImage(context, startImage);
+        Pending2DImage image = makePendingImage(context, startImage);
 
         // create levels one at a time
         for (size_t level = 1; level < numLevels; ++level)
@@ -44,13 +44,13 @@ namespace DynamiCL
             };
 
         image_type lower = nextLevel();
-        PendingImage result = makePendingImage(context_, lower);
+        Pending2DImage result = makePendingImage(context_, lower);
         image_type upper = nextLevel();
 
         // keep collapsing layers
         while(upper.valid())
         {
-            PendingImage u = makePendingImage(context_, upper);
+            Pending2DImage u = makePendingImage(context_, upper);
             // create pair to pass to the collapser
             LevelPair pair {std::move(u), std::move(result)};
 

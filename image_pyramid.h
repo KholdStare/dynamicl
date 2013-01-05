@@ -28,24 +28,24 @@ namespace DynamiCL
          */
         struct LevelPair
         {
-            PendingImage upper;
-            PendingImage lower;
+            Pending2DImage upper;
+            Pending2DImage lower;
         };
 
         /**
          * Creates a new level
          */
-        typedef std::function< LevelPair(PendingImage const&) > NextLevelFunc;
+        typedef std::function< LevelPair(Pending2DImage const&) > NextLevelFunc;
 
         /**
          * Collapses two levels
          */
-        typedef std::function< PendingImage(LevelPair const&) > CollapseLevelFunc;
+        typedef std::function< Pending2DImage(LevelPair const&) > CollapseLevelFunc;
 
         /**
          * Fuses several pyramids at a single layer
          */
-        typedef std::function< PendingImage(PendingImage const&) > FuseLevelsFunc;
+        typedef std::function< Pending2DImage(Pending2DImage const&) > FuseLevelsFunc;
 
         /**
          * Construct an image puramid with @a numLevels levels,

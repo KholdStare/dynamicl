@@ -133,7 +133,7 @@ namespace DynamiCL
     }
 
     ImagePyramid::LevelPair
-    createPyramidLevel(PendingImage const& inputImage,
+    createPyramidLevel(Pending2DImage const& inputImage,
                        cl::Program const& program )
     {
         ComputeContext const& gpu = inputImage.context;
@@ -151,7 +151,7 @@ namespace DynamiCL
         Kernel row = {2, program, "downsample_row", Kernel::Range::DESTINATION};
 
         // process image with kernel
-        PendingImage pendingInterImage =
+        Pending2DImage pendingInterImage =
             inputImage.process(row, {{ halfWidth, height }});
 
         std::cout << "Downsampled Rows" << std::endl;
@@ -164,7 +164,7 @@ namespace DynamiCL
         size_t halfHeight = halveDimension(height);
 
         Kernel col = {2, program, "downsample_col", Kernel::Range::DESTINATION};
-        PendingImage downsampled =
+        Pending2DImage downsampled =
             pendingInterImage.process(col, {{halfWidth, halfHeight}});
 
         std::cout << "Downsampled Cols" << std::endl;
@@ -174,7 +174,7 @@ namespace DynamiCL
          ******************/
 
         Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
-        PendingImage pendingUpCol =
+        Pending2DImage pendingUpCol =
             downsampled.process(upcol, pendingInterImage.image);
 
         std::cout << "Upsampled Cols" << std::endl;
@@ -184,7 +184,7 @@ namespace DynamiCL
          ******************/
 
         Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
-        PendingImage pendingUpRow =
+        Pending2DImage pendingUpRow =
             pendingUpCol.process(uprow, {{width, height}});
 
         std::cout << "Upsampled Rows" << std::endl;
@@ -214,7 +214,7 @@ namespace DynamiCL
                                    &pendingUpRow.events,
                                    &complete);
 
-        PendingImage finalResult(gpu, laplacianImage);
+        Pending2DImage finalResult(gpu, laplacianImage);
         finalResult.events.push_back(complete);
 
         std::cout << "Created Laplacian" << std::endl;
@@ -223,7 +223,7 @@ namespace DynamiCL
     }
 
     
-    PendingImage
+    Pending2DImage
     collapsePyramidLevel(ImagePyramid::LevelPair const& pair,
                          cl::Program const& program )
     {
@@ -239,7 +239,7 @@ namespace DynamiCL
          ******************/
 
         Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
-        PendingImage pendingUpCol =
+        Pending2DImage pendingUpCol =
             pair.lower.process(upcol, {{lowerWidth, upperHeight}});
 
         std::cout << "Upsampled Cols" << std::endl;
@@ -249,7 +249,7 @@ namespace DynamiCL
          ******************/
 
         Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
-        PendingImage pendingUpRow =
+        Pending2DImage pendingUpRow =
             pendingUpCol.process(uprow, {{upperWidth, upperHeight}});
 
         std::cout << "Upsampled Rows" << std::endl;
@@ -286,7 +286,7 @@ namespace DynamiCL
                                    &pendingUpRow.events,
                                    &complete);
 
-        PendingImage finalResult(context, collapsedImage);
+        Pending2DImage finalResult(context, collapsedImage);
         finalResult.events.push_back(complete);
 
         std::cout << "Created Laplacian" << std::endl;
@@ -294,8 +294,8 @@ namespace DynamiCL
         return finalResult;
     }
 
-    PendingImage
-    fusePyramidLevel(PendingImage const& array,
+    Pending2DImage
+    fusePyramidLevel(Pending2DImage const& array,
                          cl::Program const& program )
     {
         ComputeContext const& context = array.context;
@@ -317,7 +317,7 @@ namespace DynamiCL
         Kernel kernel = {3, program, "fuse_level", Kernel::Range::DESTINATION};
         cl::Kernel clkernel = kernel.build(array.image, resultImage);
 
-        //PendingImage fused =
+        //Pending2DImage fused =
             //array.process(fuse, width, height);
 
         std::cout << "MERGING LEVEL :"
@@ -332,7 +332,7 @@ namespace DynamiCL
                                    &array.events,
                                    &complete);
 
-        PendingImage fused(context, resultImage);
+        Pending2DImage fused(context, resultImage);
         fused.events.push_back(complete);
 
         return fused;
@@ -374,7 +374,7 @@ namespace DynamiCL
                              "========================"
                           << std::endl;
                 ImagePyramid pyramid(context, *in, 8,
-                                     [&](PendingImage const& im)
+                                     [&](Pending2DImage const& im)
                                      {
                                         return createPyramidLevel(im, program);
                                      });
@@ -391,7 +391,7 @@ namespace DynamiCL
                               << std::endl;
                     ImagePyramid fused =
                         ImagePyramid::fuse(subpyramids,
-                            [&](PendingImage const& im)
+                            [&](Pending2DImage const& im)
                             {
                                 return fusePyramidLevel(im, program);
                             });

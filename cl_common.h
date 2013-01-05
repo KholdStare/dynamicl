@@ -213,6 +213,10 @@ namespace DynamiCL
         {
             flags |= CL_MEM_HOST_READ_ONLY;
         }
+        else
+        {
+            flags |= CL_MEM_COPY_HOST_PTR;
+        }
 
         return detail::construct_image<CLImage>(c.context, dims, flags, hostPtr);
     }

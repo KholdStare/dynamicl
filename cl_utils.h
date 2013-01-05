@@ -48,13 +48,13 @@ namespace DynamiCL
                               Kernel const& kernel,
                               ComputeContext const& context)
     {
-        PendingImage clImage = makePendingImage(context, image);
+        Pending2DImage clImage = makePendingImage(context, image);
         clImage.process(kernel).readInto(image.rawData());
     }
 
     template <typename PixType>
     std::shared_ptr<HostImage<PixType, 2>>
-    makeHostImage(PendingImage const& pending)
+    makeHostImage(Pending2DImage const& pending)
     {
         typedef HostImage<PixType, 2> image_type;
         auto out = std::make_shared<image_type>( pending.width(), pending.height() );
@@ -63,36 +63,45 @@ namespace DynamiCL
         return out;
     }
 
-    //template <typename PixType>
-    //PendingImage
-    //makePendingImage(ComputeContext const& context, HostImage<PixType, 3> const& image)
-    //{
-        //cl::Image2D clInputImage(context.context,
-                //CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                //cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: not hardcode?
-                //image.width(),
-                //image.height(),
-                //0,
-                //const_cast<void*>(image.rawData()));
-
-        //PendingImage out(context, clInputImage);
-
-        //return out;
-    //}
-
-    template <typename PixType>
-    PendingImage
-    makePendingImage(ComputeContext const& context, HostImage<PixType, 2> const& image)
+    namespace detail
     {
-        cl::Image2D clInputImage(context.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: not hardcode?
-                image.width(),
-                image.height(),
-                0,
-                const_cast<void*>(image.rawData()));
 
-        PendingImage out(context, clInputImage);
+        template <size_t N>
+        struct dimension_traits;
+
+        template <>
+        struct dimension_traits<1>
+        {
+            typedef cl::Image1D climage_type;
+        };
+
+        template <>
+        struct dimension_traits<2>
+        {
+            typedef cl::Image2D climage_type;
+        };
+
+        template <>
+        struct dimension_traits<3>
+        {
+            typedef cl::Image3D climage_type;
+        };
+
+    }
+
+    template <typename PixType, size_t N>
+    PendingImage<typename detail::dimension_traits<N>::climage_type>
+    makePendingImage(ComputeContext const& context, HostImage<PixType, N> const& image)
+    {
+        typedef typename detail::dimension_traits<N>::climage_type climage_type;
+        typedef PendingImage<climage_type> pending_type;
+
+        climage_type climage =
+            createCLImage<climage_type>(context,
+                          image.dimensions(),
+                          const_cast<void*>(image.rawData()));
+
+        pending_type out(context, climage);
 
         return out;
     }
