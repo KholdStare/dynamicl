@@ -1,7 +1,3 @@
-#define ARRAY_SIZE 64
-
-#include <cmath>
-#include <cstdio>
 #include <iostream>
 #include <memory>
 
@@ -464,48 +460,47 @@ int main(int argc, char const *argv[])
     std::vector<std::string> paths;
     std::copy_n( &argv[1], argc-1, std::back_inserter(paths) );
 
-    auto transformImage =
+    // set up transformation functions
+
+    auto toFloatImage =
         [&]( std::shared_ptr<vigra::BRGBImage> im )
         {
             return transformToFloat4(*im);
         };
 
-    //auto calcQuality =
-        //[&]( std::shared_ptr<FloatImage> in ) -> std::shared_ptr<FloatImage>
-        //{
-            //PendingImage inputImage = makePendingImage(gpu, *in);
-
-            //PendingImage outputImage = calculateQualityCL(inputImage, program);
-            //return makeHostImage<FloatImage::pixel_type>(outputImage);
-        //};
-
     int currentIndex = 1;
     auto saveImage =
         [&]( std::shared_ptr<FloatImage> im )
         {
+            // create output filename
             std::stringstream sstr;
             sstr << "out" << currentIndex << ".tiff";
 
+            // save image
             saveTiff16(*im, sstr.str());
             ++currentIndex;
         };
 
+    // create pipeline
     std::future<void> fut =
           Plumbing::makeSource(paths)
           >> loadImage
-          >> transformImage
+          >> toFloatImage
           >> Plumbing::makeIteratorFilter<std::shared_ptr<FloatImage>,
                                           std::shared_ptr<FloatImage>>(mergeHDR{ 3, gpu, program })
-          //>> calcQuality
           >> saveImage;
 
+    // wait for pipeline to complete
+    // and report any errors
     try
     {
         fut.get();
     }
     catch (cl::Error& e)
     {
-        std::cout << "Encountered OpenCL Error!\n" << e.what() << ": " << clErrorToStr(e.err()) << std::endl;
+        std::cout << "Encountered OpenCL Error!\n"
+                  << e.what() << ": "
+                  << clErrorToStr(e.err()) << std::endl;
         exit(1);
     }
 
