@@ -8,6 +8,8 @@
 #include <CL/cl.hpp>
 #endif
 
+#include <array>
+
 namespace DynamiCL
 {
     char const* clErrorToStr(cl_int err);
@@ -91,6 +93,166 @@ namespace DynamiCL
         }
 
     };
+
+    /***************************************************************************
+     *                           cl::Image helpers                             *
+     ***************************************************************************/
+
+    namespace detail
+    {
+        /**
+         * Traits to determine types/operations
+         * that are possible for an OpenCL image
+         */
+        template <typename CLImage> struct image_traits;
+
+        template <>
+        struct image_traits<cl::Image1D>
+        {
+            static const size_t N = 1;
+            static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE1D;
+            typedef cl::Image1D climage_type;
+        };
+
+        template <>
+        struct image_traits<cl::Image1DArray>
+        {
+            static const size_t N = 2;
+            static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE1D_ARRAY;
+            typedef cl::Image1DArray climage_type;
+        };
+
+        template <>
+        struct image_traits<cl::Image2D>
+        {
+            static const size_t N = 2;
+            static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE2D;
+            typedef cl::Image2D climage_type;
+        };
+
+        template <>
+        struct image_traits<cl::Image2DArray>
+        {
+            static const size_t N = 3;
+            static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE2D_ARRAY;
+            typedef cl::Image2DArray climage_type;
+        };
+
+        template <>
+        struct image_traits<cl::Image3D>
+        {
+            static const size_t N = 3;
+            static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE3D;
+            typedef cl::Image3D climage_type;
+        };
+
+
+        template <typename CLImage>
+        CLImage
+        construct_image(cl::Context const& context,
+                        std::array<size_t, image_traits<CLImage>::N> const& dims,
+                        cl_mem_flags flags,
+                        void* host_ptr)
+        {
+            static constexpr size_t N = image_traits<CLImage>::N;
+            static_assert( (N >= 1) && (N <= 3), "Image dimensions must be between 1 and 3." );
+
+            cl_image_desc desc;
+
+            desc.image_type = image_traits<CLImage>::mem_type;
+            desc.image_width = dims[0];
+
+            desc.image_height = 0;
+            if ( N > 1 )
+            {
+                desc.image_height = dims[1];
+            }
+
+            desc.image_depth = 0;
+            if ( N > 2 )
+            {
+                desc.image_depth = dims[2];
+            }
+
+            desc.image_row_pitch = 0;
+            desc.image_slice_pitch = 0;
+            desc.num_mip_levels = 0;
+            desc.num_samples = 0;
+            desc.buffer = 0;
+
+            cl::ImageFormat format = cl::ImageFormat(CL_RGBA, CL_FLOAT);
+
+            cl_int error;
+            cl_mem mem = ::clCreateImage(
+                context(), 
+                flags, 
+                &format, 
+                &desc, 
+                host_ptr, 
+                &error);
+
+            ::cl::detail::errHandler(error, "clCreateImage");
+            return CLImage(mem);
+        }
+
+    }
+
+    template <typename CLImage>
+    typename detail::image_traits<CLImage>::climage_type
+    createCLImage(ComputeContext const& c,
+                  std::array<size_t, detail::image_traits<CLImage>::N> const& dims,
+                  void* hostPtr = nullptr)
+    {
+        cl_mem_flags flags = CL_MEM_READ_WRITE;
+        if (!hostPtr)
+        {
+            flags |= CL_MEM_HOST_READ_ONLY;
+        }
+
+        return detail::construct_image<CLImage>(c.context, dims, flags, hostPtr);
+    }
+
+    /**
+     * Return OpenCL image dimensions in a std::array
+     */
+    template <typename CLImage>
+    std::array<size_t, detail::image_traits<CLImage>::N>
+    getDims(CLImage const& image)
+    {
+        static const size_t N = detail::image_traits<CLImage>::N;
+
+        std::array<size_t, N> dims;
+
+        //size_t wololo = image.getImageInfo<CL_IMAGE_WIDTH>();
+        dims[0] = image.template getImageInfo<CL_IMAGE_WIDTH>();
+
+        if ( N > 1 )
+        {
+            dims[1] = image.template getImageInfo<CL_IMAGE_HEIGHT>();
+        }
+
+        if ( N > 2 )
+        {
+            dims[2] = image.template getImageInfo<CL_IMAGE_DEPTH>();
+        }
+
+        return dims;
+    }
+
+    inline cl::NDRange toNDRange(std::array<size_t, 1> dims)
+    {
+        return cl::NDRange(dims[0]);
+    }
+
+    inline cl::NDRange toNDRange(std::array<size_t, 2> dims)
+    {
+        return cl::NDRange(dims[0], dims[1]);
+    }
+
+    inline cl::NDRange toNDRange(std::array<size_t, 3> dims)
+    {
+        return cl::NDRange(dims[0], dims[1], dims[2]);
+    }
 
 }
 

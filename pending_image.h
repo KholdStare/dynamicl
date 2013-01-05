@@ -13,8 +13,11 @@ namespace DynamiCL
      */
     struct PendingImage
     {
+        typedef typename detail::image_traits<cl::Image2D>::climage_type climage_type;
+        static const size_t N = detail::image_traits<cl::Image2D>::N;
+
         ComputeContext const& context;
-        cl::Image2D image;
+        climage_type image;
         std::vector<cl::Event> events; // TODO: const?
 
         PendingImage(PendingImage&& other)
@@ -22,14 +25,14 @@ namespace DynamiCL
               image(std::move(other.image)),
               events(std::move(other.events))
         {
-            other.image = cl::Image2D();
+            other.image = climage_type();
         }
 
         PendingImage& operator =(PendingImage&& other)
         {
             image = std::move(other.image);
             events = std::move(other.events);
-            other.image = cl::Image2D();
+            other.image = climage_type();
             return *this;
         }
 
@@ -39,20 +42,19 @@ namespace DynamiCL
               events()
         { }
 
-        PendingImage(ComputeContext const& c, cl::Image2D const& im)
+        PendingImage(ComputeContext const& c, climage_type const& im)
             : context(c),
               image(im),
               events()
         { }
-
 
         size_t width() const { return this->image.getImageInfo<CL_IMAGE_WIDTH>(); }
         size_t height() const { return this->image.getImageInfo<CL_IMAGE_HEIGHT>(); }
 
         // TODO: can these be const?
         PendingImage process(Kernel const& kernel) const; // assumes same dimension
-        PendingImage process(Kernel const& kernel, size_t width, size_t height) const;
-        PendingImage process(Kernel const& kernel, cl::Image2D const& reuseImage) const;
+        PendingImage process(Kernel const& kernel, std::array<size_t, N> const& dims) const;
+        PendingImage process(Kernel const& kernel, climage_type const& reuseImage) const;
 
         /**
          * Read image into host memory

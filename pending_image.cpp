@@ -4,25 +4,18 @@ namespace DynamiCL
 {
     PendingImage PendingImage::process(Kernel const& kernel) const
     {
-        size_t width = this->image.getImageInfo<CL_IMAGE_WIDTH>();
-        size_t height = this->image.getImageInfo<CL_IMAGE_HEIGHT>();
-
-        return this->process(kernel, width, height);
+        return this->process(kernel, getDims<climage_type>(this->image));
     }
 
-    PendingImage PendingImage::process(Kernel const& kernel, size_t width, size_t height) const
+    PendingImage PendingImage::process(Kernel const& kernel, std::array<size_t, N> const& dims) const
     {
         // construct a new image
-        cl::Image2D resultImage(context.context,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT), // TODO: get image format from this image
-                width,
-                height);
+        auto image = createCLImage<climage_type>(context, dims);
 
-        return this->process(kernel, resultImage);
+        return this->process(kernel, image);
     }
 
-    PendingImage PendingImage::process(Kernel const& kernel, cl::Image2D const& reuseImage) const
+    PendingImage PendingImage::process(Kernel const& kernel, climage_type const& reuseImage) const
     {
         // create pending image
         PendingImage result(context, reuseImage);
@@ -31,7 +24,7 @@ namespace DynamiCL
         cl::Kernel clkernel = kernel.build(this->image, result.image);
 
         // figure out range of kernel
-        cl::Image2D const* rangeGuide; // which image do we get the range from
+        climage_type const* rangeGuide; // which image do we get the range from
         if (kernel.range == Kernel::Range::SOURCE)
         {
             rangeGuide = &this->image;
@@ -41,14 +34,14 @@ namespace DynamiCL
             rangeGuide = &reuseImage;
         }
 
-        size_t width = rangeGuide->getImageInfo<CL_IMAGE_WIDTH>();
-        size_t height = rangeGuide->getImageInfo<CL_IMAGE_HEIGHT>();
+        //size_t width = rangeGuide->getImageInfo<CL_IMAGE_WIDTH>();
+        //size_t height = rangeGuide->getImageInfo<CL_IMAGE_HEIGHT>();
 
         // enqueue kernel computation
         cl::Event complete;
         context.queue.enqueueNDRangeKernel(clkernel,
                                    cl::NullRange,
-                                   cl::NDRange(width, height),
+                                   toNDRange(getDims(*rangeGuide)),
                                    cl::NullRange, 
                                    &this->events,
                                    &complete);

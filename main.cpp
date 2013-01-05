@@ -148,11 +148,11 @@ namespace DynamiCL
         size_t halfWidth = halveDimension(width);
 
         // row downsampling kernel
-        Kernel row = {program, "downsample_row", Kernel::Range::DESTINATION};
+        Kernel row = {2, program, "downsample_row", Kernel::Range::DESTINATION};
 
         // process image with kernel
         PendingImage pendingInterImage =
-            inputImage.process(row, halfWidth, height);
+            inputImage.process(row, {{ halfWidth, height }});
 
         std::cout << "Downsampled Rows" << std::endl;
 
@@ -163,9 +163,9 @@ namespace DynamiCL
         // Create an output image in compute device
         size_t halfHeight = halveDimension(height);
 
-        Kernel col = {program, "downsample_col", Kernel::Range::DESTINATION};
+        Kernel col = {2, program, "downsample_col", Kernel::Range::DESTINATION};
         PendingImage downsampled =
-            pendingInterImage.process(col, halfWidth, halfHeight);
+            pendingInterImage.process(col, {{halfWidth, halfHeight}});
 
         std::cout << "Downsampled Cols" << std::endl;
 
@@ -173,7 +173,7 @@ namespace DynamiCL
          *  Upsample col  *
          ******************/
 
-        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
+        Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
         PendingImage pendingUpCol =
             downsampled.process(upcol, pendingInterImage.image);
 
@@ -183,9 +183,9 @@ namespace DynamiCL
          *  Upsample row  *
          ******************/
 
-        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
+        Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
         PendingImage pendingUpRow =
-            pendingUpCol.process(uprow, width, height);
+            pendingUpCol.process(uprow, {{width, height}});
 
         std::cout << "Upsampled Rows" << std::endl;
 
@@ -193,7 +193,7 @@ namespace DynamiCL
          *  Create Laplacian  *
          **********************/
 
-        Kernel createLaplacian = {program, "create_laplacian", Kernel::Range::SOURCE};
+        Kernel createLaplacian = {2, program, "create_laplacian", Kernel::Range::SOURCE};
 
         cl::Image2D laplacianImage(gpu.context,
                 CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
@@ -238,9 +238,9 @@ namespace DynamiCL
          *  Upsample col  *
          ******************/
 
-        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
+        Kernel upcol = {2, program, "upsample_col", Kernel::Range::SOURCE};
         PendingImage pendingUpCol =
-            pair.lower.process(upcol, lowerWidth, upperHeight);
+            pair.lower.process(upcol, {{lowerWidth, upperHeight}});
 
         std::cout << "Upsampled Cols" << std::endl;
 
@@ -248,9 +248,9 @@ namespace DynamiCL
          *  Upsample row  *
          ******************/
 
-        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
+        Kernel uprow = {2, program, "upsample_row", Kernel::Range::SOURCE};
         PendingImage pendingUpRow =
-            pendingUpCol.process(uprow, upperWidth, upperHeight);
+            pendingUpCol.process(uprow, {{upperWidth, upperHeight}});
 
         std::cout << "Upsampled Rows" << std::endl;
 
@@ -258,7 +258,7 @@ namespace DynamiCL
          *  Create Laplacian  *
          **********************/
 
-        Kernel collapse= {program, "collapse_level", Kernel::Range::SOURCE};
+        Kernel collapse= {2, program, "collapse_level", Kernel::Range::SOURCE};
 
         // TODO: add utility function for processing several image
         // into one output image.
@@ -314,7 +314,7 @@ namespace DynamiCL
                 width,
                 height);
 
-        Kernel kernel = {program, "fuse_level", Kernel::Range::DESTINATION};
+        Kernel kernel = {3, program, "fuse_level", Kernel::Range::DESTINATION};
         cl::Kernel clkernel = kernel.build(array.image, resultImage);
 
         //PendingImage fused =
@@ -340,12 +340,6 @@ namespace DynamiCL
 
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
-    PendingImage calculateQualityCL(PendingImage const& inputImage, cl::Program const& program )
-    {
-        Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
-
-        return inputImage.process(quality);
-    }
 
     /**
      * Function object for merging exposures
@@ -360,7 +354,7 @@ namespace DynamiCL
         template <typename InputIt, typename OutputIt>
         void operator() (InputIt cur, InputIt last, OutputIt dest)
         {
-            Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
+            Kernel quality = {2, program, "compute_quality", Kernel::Range::SOURCE};
 
             std::vector<ImagePyramid> subpyramids;
             while(cur != last)
