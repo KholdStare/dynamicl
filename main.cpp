@@ -458,7 +458,7 @@ int main(int argc, char const *argv[])
     ComputeContext gpu;
 
     // Build program 
-    cl::Program program = buildProgram(gpu.context, gpu.device, "expocl.cl");
+    cl::Program program = buildProgram(gpu.context, gpu.device, "kernels.cl");
 
     // get image paths
     std::vector<std::string> paths;

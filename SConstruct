@@ -27,11 +27,11 @@ commonSource = ['utils.cpp',
                 'cl_utils.cpp',
                 'pending_image.cpp',
                 'image_pyramid.cpp']
-mainSource = ['expocl.cpp']
+mainSource = ['main.cpp']
 testSource = ['test_suite.cpp']
 
 mainSource.extend(commonSource)
 testSource.extend(commonSource)
 
-env.Program(target = 'expocl', source = mainSource)
+env.Program(target = 'dynamicl', source = mainSource)
 env.Program(target = 'test_suite', source = testSource)
