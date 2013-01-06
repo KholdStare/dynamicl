@@ -264,7 +264,7 @@ namespace DynamiCL
     }
 
     Pending2DImage
-    fusePyramidLevel(Pending2DImage const& array,
+    fusePyramidLevel(Pending2DImageArray const& array,
                          cl::Program const& program )
     {
         ComputeContext const& context = array.context;
@@ -360,7 +360,7 @@ namespace DynamiCL
                               << std::endl;
                     ImagePyramid fused =
                         ImagePyramid::fuse(subpyramids,
-                            [&](Pending2DImage const& im)
+                            [&](Pending2DImageArray const& im)
                             {
                                 return fusePyramidLevel(im, program);
                             });

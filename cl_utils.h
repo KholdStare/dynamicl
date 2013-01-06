@@ -65,6 +65,23 @@ namespace DynamiCL
 
     }
 
+    template <typename CLImage, typename PixType, size_t N>
+    PendingImage<CLImage>
+    makePendingImage(ComputeContext const& context, HostImage<PixType, N> const& image)
+    {
+        typedef CLImage climage_type;
+        typedef PendingImage<climage_type> pending_type;
+
+        climage_type climage =
+            createCLImage<climage_type>(context,
+                          image.dimensions(),
+                          const_cast<void*>(image.rawData()));
+
+        pending_type out(context, climage);
+
+        return out;
+    }
+
     /**
      * Takes an image currently on the host, and transforms
      * it inplace using an OpenCL kernel.
@@ -74,7 +91,7 @@ namespace DynamiCL
                               Kernel const& kernel,
                               ComputeContext const& context)
     {
-        makePendingImage(context, image)
+        makePendingImage<typename detail::dimension_traits<N>::climage_type>(context, image)
             .process(kernel)
             .readInto(image.rawData());
     }
@@ -88,23 +105,6 @@ namespace DynamiCL
 
         auto out = std::make_shared<image_type>(pending.dimensions());
         pending.readInto(out->rawData());
-
-        return out;
-    }
-
-    template <typename PixType, size_t N>
-    PendingImage<typename detail::dimension_traits<N>::climage_type>
-    makePendingImage(ComputeContext const& context, HostImage<PixType, N> const& image)
-    {
-        typedef typename detail::dimension_traits<N>::climage_type climage_type;
-        typedef PendingImage<climage_type> pending_type;
-
-        climage_type climage =
-            createCLImage<climage_type>(context,
-                          image.dimensions(),
-                          const_cast<void*>(image.rawData()));
-
-        pending_type out(context, climage);
 
         return out;
     }

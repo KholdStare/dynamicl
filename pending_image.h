@@ -260,7 +260,9 @@ namespace DynamiCL
                 &this->events);
     }
 
+    // some commonly used types
     typedef PendingImage<cl::Image2D> Pending2DImage;
+    typedef PendingImage<cl::Image2DArray> Pending2DImageArray;
 
 }
 

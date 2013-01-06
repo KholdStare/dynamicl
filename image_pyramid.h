@@ -22,6 +22,7 @@ namespace DynamiCL
     public:
         typedef RGBA<float> pixel_type;
         typedef HostImage<pixel_type, 2> image_type;
+        typedef cl::Image2D climage_type;
 
         /**
          * An image pair, of two levels of a pyramid
@@ -45,7 +46,7 @@ namespace DynamiCL
         /**
          * Fuses several pyramids at a single layer
          */
-        typedef std::function< Pending2DImage(Pending2DImage const&) > FuseLevelsFunc;
+        typedef std::function< Pending2DImage(PendingImage<cl::Image2DArray> const&) > FuseLevelsFunc;
 
         /**
          * Construct an image puramid with @a numLevels levels,
