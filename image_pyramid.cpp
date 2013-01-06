@@ -1,5 +1,8 @@
 #include "image_pyramid.h"
+#include "save_image.h"
 #include <iostream>
+#include <sstream>
+
 
 namespace DynamiCL
 {
@@ -94,7 +97,7 @@ namespace DynamiCL
 
         std::cout << "Extracted Guts" << std::endl;
 
-        //return ImagePyramid(context, std::move(pyramidGuts[0]));
+        //return ImagePyramid(context, std::move(pyramidGuts[1]));
 
         // outer vector: represents collection of levels
         // inner vector: single level from all pyramids
@@ -119,22 +122,23 @@ namespace DynamiCL
 
         // levelCollection starts with last (smallest level),
         // and increases from there
-        assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
+        if ( levelCollection.size() > 1 )
+        {
+            assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
+        }
 
-        std::cout << "Aligned " << levelCollection.size() << " levels" << std::endl;
+        std::cout << "Have to fuse " << levelCollection.size() << " levels" << std::endl;
 
         // ===================================================
         // now we can fuse each level individually
         std::vector<image_type> fusedLevels;
 
         // fuse all levels
+        size_t l = 0;
         while(!levelCollection.empty())
         {
             // these image have to be fused
             std::vector<image_type> singleLevel = std::move(levelCollection.back());
-            std::cout << "Level has "
-                      << singleLevel.size()
-                      << " images to be fused" << std::endl;
             levelCollection.pop_back();
 
             // create contiguous image array in memory
@@ -144,14 +148,21 @@ namespace DynamiCL
             Pending2DImageArray clarray =
                 makePendingImage<cl::Image2DArray>(context, levelArray);
 
+            //std::stringstream sstr;
+            //sstr << "level_test" << l << ".tiff";
+            ////saveTiff16(makeHostImage<RGBA<float>>(fused), sstr.str());
+            //saveTiff16(collapseDimension(std::move(levelArray)), sstr.str());
+
+            auto dims = clarray.dimensions();
             std::cout << "Dimensions: "
-                      << clarray.width() << " x "
-                      << clarray.height() << " x"
-                      << clarray.depth() << std::endl;
+                      << dims[0] << " x "
+                      << dims[1] << " x "
+                      << dims[2] << std::endl;
 
             Pending2DImage fused = fuseLevels(clarray);
 
             fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
+            ++l;
         }
 
         std::cout << "Fused " << fusedLevels.size() << " levels" << std::endl;

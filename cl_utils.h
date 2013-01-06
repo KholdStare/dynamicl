@@ -16,28 +16,6 @@ namespace DynamiCL
      *                        Kernel and Image helpers                         *
      ***************************************************************************/
 
-    /**
-     * A simple RGBA pixel, of a particular component type
-     */
-    template <typename ComponentType>
-    union RGBA
-    {
-        typedef ComponentType component_type;
-        typedef component_type* iterator;
-        typedef component_type const* const_iterator;
-
-        struct
-        {
-            ComponentType r;
-            ComponentType g;
-            ComponentType b;
-            ComponentType a;
-        };
-        component_type components[4];
-
-        component_type&       operator[]( size_t i )       { return components[i]; }
-        component_type const& operator[]( size_t i ) const { return components[i]; }
-    };
 
     namespace detail
     {

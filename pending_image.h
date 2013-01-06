@@ -26,7 +26,7 @@ namespace DynamiCL
     struct PendingImage
     {
         typedef typename detail::image_traits<CLImage>::climage_type climage_type;
-        static const size_t N = detail::image_traits<cl::Image2D>::N;
+        static const size_t N = detail::image_traits<climage_type>::N;
 
         ComputeContext const& context;
         climage_type image;

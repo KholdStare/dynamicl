@@ -8,6 +8,8 @@
 #include "cl_utils.h"
 #include "utils.h"
 #include "image_pyramid.h"
+#include "pyr_impl.h"
+#include "save_image.h"
 
 #include "plumbingplusplus/plumbing.hpp"
 
@@ -58,26 +60,6 @@ namespace DynamiCL
         return out;
     }
 
-    template <typename OutComponentType>
-    vigra::RGBValue< OutComponentType >
-    convertPixelFromFloat4(RGBA<float> const& in)
-    {
-        using namespace vigra;
-
-        const float outMax = static_cast<float>(NumericTraits<OutComponentType>::max());
-
-        RGBValue< OutComponentType > out;
-
-        // copy values from input, apply alpha, and scale
-        for (size_t i = 0; i < 3; ++i)
-        {
-            //out[i] = static_cast<OutComponentType>(in[i] * outMax * in.a);
-            out[i] = static_cast<OutComponentType>(in[i] * outMax);
-        }
-
-        return out;
-    }
-
     template <typename InComponentType>
     std::shared_ptr< FloatImage >
     transformToFloat4(vigra::BasicImage< vigra::RGBValue< InComponentType >> const& in)
@@ -95,29 +77,6 @@ namespace DynamiCL
         return out;
     }
 
-    void saveTiff16(FloatImage const& in, std::string const& outPath)
-    {
-        typedef vigra::TinyVector< float, 4 > InPixelType;
-        typedef vigra::UInt16 OutComponentType;
-        typedef vigra::RGBValue< OutComponentType > OutPixelType;
-        typedef vigra::BasicImage< OutPixelType > OutImgType;
-
-        vigra::ImageExportInfo exportInfo(outPath.c_str());
-        exportInfo.setFileType("TIFF");
-        exportInfo.setPixelType("UINT16");
-        //exportInfo.setCompression("LZW"); // TODO: major bottleneck
-
-        OutImgType out(in.width(), in.height());
-
-        // transform
-        std::transform(in.begin(), in.end(), out.begin(),
-                       convertPixelFromFloat4<OutComponentType>);
-
-        // write the image to the file given as second argument
-        // the file type will be determined from the file name's extension
-        exportImage(srcImageRange(out), exportInfo);
-    }
-
     template <typename T>
     void printN(T const* array, size_t n)
     {
@@ -127,188 +86,9 @@ namespace DynamiCL
         }
     }
 
-    inline size_t halveDimension(size_t n)
-    {
-        return (n + 1) / 2;
-    }
-
-    ImagePyramid::LevelPair
-    createPyramidLevel(Pending2DImage const& inputImage,
-                       cl::Program const& program )
-    {
-        ComputeContext const& gpu = inputImage.context;
-        size_t width = inputImage.width();
-        size_t height = inputImage.height();
-
-        /********************
-         *  Downsample row  *
-         ********************/
-
-        // calculate width of next image
-        size_t halfWidth = halveDimension(width);
-
-        // row downsampling kernel
-        Kernel row = {program, "downsample_row", Kernel::Range::DESTINATION};
-
-        // process image with kernel
-        Pending2DImage pendingInterImage =
-            inputImage.process<cl::Image2D>(row, {{ halfWidth, height }});
-
-        std::cout << "Downsampled Rows" << std::endl;
-
-        /********************
-         *  Downsample col  *
-         ********************/
-
-        // Create an output image in compute device
-        size_t halfHeight = halveDimension(height);
-
-        Kernel col = {program, "downsample_col", Kernel::Range::DESTINATION};
-        Pending2DImage downsampled =
-            pendingInterImage.process<cl::Image2D>(col, {{halfWidth, halfHeight}});
-
-        std::cout << "Downsampled Cols" << std::endl;
-
-        /******************
-         *  Upsample col  *
-         ******************/
-
-        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
-        Pending2DImage pendingUpCol =
-            downsampled.process(upcol, pendingInterImage.image);
-
-        std::cout << "Upsampled Cols" << std::endl;
-
-        /******************
-         *  Upsample row  *
-         ******************/
-
-        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
-        Pending2DImage pendingUpRow =
-            pendingUpCol.process<cl::Image2D>(uprow, {{width, height}});
-
-        std::cout << "Upsampled Rows" << std::endl;
-
-        /**********************
-         *  Create Laplacian  *
-         **********************/
-
-        Kernel createLaplacian = {program, "create_laplacian", Kernel::Range::SOURCE};
-
-        Pending2DImage pendingResult = 
-            Pending::process<cl::Image2D>
-            (
-                    gpu,
-                    createLaplacian,
-                    inputImage.dimensions(), // dimensions
-                    toNDRange(inputImage.dimensions()), // problem range
-                    inputImage, pendingUpRow // input images
-            );
-
-        std::cout << "Created Laplacian" << std::endl;
-
-        return {std::move(pendingResult), std::move(downsampled)};
-    }
-
-    
-    Pending2DImage
-    collapsePyramidLevel(ImagePyramid::LevelPair const& pair,
-                         cl::Program const& program )
-    {
-        ComputeContext const& context = pair.upper.context;
-
-        // get all the dimensions
-        size_t upperWidth  = pair.upper.width();
-        size_t upperHeight = pair.upper.height();
-        size_t lowerWidth  = pair.lower.width();
-
-        /******************
-         *  Upsample col  *
-         ******************/
-
-        Kernel upcol = {program, "upsample_col", Kernel::Range::SOURCE};
-        Pending2DImage pendingUpCol =
-            pair.lower.process<cl::Image2D>(upcol, {{lowerWidth, upperHeight}});
-
-        std::cout << "Upsampled Cols" << std::endl;
-
-        /******************
-         *  Upsample row  *
-         ******************/
-
-        Kernel uprow = {program, "upsample_row", Kernel::Range::SOURCE};
-        Pending2DImage pendingUpRow =
-            pendingUpCol.process<cl::Image2D>(uprow, {{upperWidth, upperHeight}});
-
-        std::cout << "Upsampled Rows" << std::endl;
-
-        /**********************
-         *  Create Laplacian  *
-         **********************/
-
-        Kernel collapse= {program, "collapse_level", Kernel::Range::SOURCE};
-
-        auto pendingResult =
-            Pending::process<cl::Image2D>
-            (
-                context,
-                collapse,
-                pair.upper.dimensions(),
-                toNDRange(pair.upper.dimensions()),
-                pendingUpRow, pair.upper
-            );
-
-        std::cout << "Created Laplacian" << std::endl;
-
-        return pendingResult;
-    }
-
-    Pending2DImage
-    fusePyramidLevel(Pending2DImageArray const& array,
-                         cl::Program const& program )
-    {
-        ComputeContext const& context = array.context;
-
-        // get all the dimensions
-        size_t width  = array.width();
-        size_t height = array.height();
-
-        /********************
-         *  Fuse the level  *
-         ********************/
-
-        cl::Image2D resultImage(context.context,
-                CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                width,
-                height);
-
-        Kernel kernel = {program, "fuse_level", Kernel::Range::DESTINATION};
-        cl::Kernel clkernel = kernel.build(array.image, resultImage);
-
-        //Pending2DImage fused =
-            //array.process(fuse, width, height);
-
-        std::cout << "MERGING LEVEL :"
-                  << width  << " x "
-                  << height << std::endl;
-
-        cl::Event complete;
-        context.queue.enqueueNDRangeKernel(clkernel,
-                                   cl::NullRange,
-                                   cl::NDRange(width, height, 1),
-                                   cl::NullRange, 
-                                   &array.events,
-                                   &complete);
-
-        Pending2DImage fused(context, resultImage);
-        fused.events.push_back(complete);
-
-        return fused;
-    }
-
         // TODO: size may be too large for device
         // TODO: have to check CL_DEVICE_MAX_MEM_ALLOC_SIZE from getDeviceInfo?
+        //
 
     /**
      * Function object for merging exposures
@@ -319,6 +99,38 @@ namespace DynamiCL
         ComputeContext const& context;
         cl::Program const& program;
 
+        FloatImage fuseGroup(std::vector<ImagePyramid>&& group)
+        {
+            std::cout << "========================\n"
+                         "Fusing Pyramids.\n"
+                         "========================"
+                      << std::endl;
+
+            ImagePyramid fused =
+                ImagePyramid::fuse(group,
+                    [&](Pending2DImageArray const& im)
+                    {
+                        return fusePyramidLevel(im, program);
+                    }
+                );
+            group.clear();
+
+            std::cout << "========================\n"
+                         "Collapsing Pyramid.\n"
+                         "========================"
+                      << std::endl;
+
+            FloatImage collapsed =
+                fused.collapse(
+                    [&](ImagePyramid::LevelPair const& pair)
+                    {
+                        return collapsePyramidLevel(pair, program);
+                    }
+                );
+
+            return collapsed;
+        }
+
         // from shared_ptr image to shared_ptr of image
         template <typename InputIt, typename OutputIt>
         void operator() (InputIt cur, InputIt last, OutputIt dest)
@@ -326,9 +138,25 @@ namespace DynamiCL
             Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
             std::vector<ImagePyramid> subpyramids;
+            size_t width = 1;
+            size_t height = 1;
+            size_t maxLevels = 1;
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
+
+                // determine pyramid depth if this is a first image in sequence
+                if (subpyramids.empty())
+                {
+                    width = in->width();
+                    height = in->height();
+
+                    maxLevels = calculateNumLevels(width, height);
+                }
+                // if subsequent images in sequence, check that sizes match
+                else if (width != in->width() || height != in->height()) {
+                    throw std::runtime_error("Image dimensions in sequence are not equal!");
+                }
                 
                 // create quality mask in image
                 std::cout << "========================\n"
@@ -342,7 +170,7 @@ namespace DynamiCL
                              "Creating Pyramid.\n"
                              "========================"
                           << std::endl;
-                ImagePyramid pyramid(context, *in, 2,
+                ImagePyramid pyramid(context, *in, maxLevels,
                                      [&](Pending2DImage const& im)
                                      {
                                         return createPyramidLevel(im, program);
@@ -354,28 +182,8 @@ namespace DynamiCL
                 // as soon as we can merge, do so
                 if (subpyramids.size() == 3)
                 {
-                    std::cout << "========================\n"
-                                 "Fusing Pyramids.\n"
-                                 "========================"
-                              << std::endl;
-                    ImagePyramid fused =
-                        ImagePyramid::fuse(subpyramids,
-                            [&](Pending2DImageArray const& im)
-                            {
-                                return fusePyramidLevel(im, program);
-                            });
+                    FloatImage collapsed = fuseGroup(std::move(subpyramids));
                     subpyramids.clear();
-
-                    std::cout << "========================\n"
-                                 "Collapsing Pyramid.\n"
-                                 "========================"
-                              << std::endl;
-                    FloatImage collapsed =
-                        fused.collapse(
-                            [&](ImagePyramid::LevelPair const& pair)
-                            {
-                                return collapsePyramidLevel(pair, program);
-                            });
 
                     std::cout << "========================\n"
                                  "HDR Merge complete.\n"
@@ -386,18 +194,6 @@ namespace DynamiCL
                     std::cout << std::endl;
                 }
 
-                //if (subimages.size() == 3)
-                //{
-                    //HostImage<RGBA<float>, 3> array(subimages);
-                    //subimages.clear();
-
-                    //FloatImage collapsed = collapseDimension(array);
-                    //*dest = std::make_shared<FloatImage>(std::move(collapsed));
-                    //dest++;
-                //}
-
-                //*dest = std::make_shared<FloatImage>(std::move(collapsed));
-                //dest++;
             }
         }
 

@@ -10,6 +10,7 @@
 
 #include <array>
 #include <type_traits>
+#include <iostream>
 
 /**
  * Some missing traits from OpenCL C++ headers
@@ -225,6 +226,7 @@ namespace DynamiCL
                     && N == 3)
                 {
                     desc.image_array_size = dims[2];
+                    std::cout << "2D image array DEPTH :" << desc.image_array_size << std::endl;
                 }
                 else 
                 {
@@ -335,27 +337,6 @@ namespace DynamiCL
         detail::get_dims_impl(image, dims,
                     std::integral_constant<size_t, 0>(),
                     std::integral_constant<size_t, N>());
-
-        //for (size_t i = 0; i < N; ++i)
-        //{
-            //dims[i] = image.template getImageInfo<
-                        //detail::image_traits<climage_type>::dim_info[i]
-                    //>();
-        //}
-
-        //if ( N > 1 )
-        //{
-            //dims[1] = image.template getImageInfo<
-                        //detail::image_traits<climage_type>::height_info
-                    //>();
-        //}
-
-        //if ( N > 2 )
-        //{
-            //dims[2] = image.template getImageInfo<
-                        //detail::image_traits<climage_type>::depth_info
-                    //>();
-        //}
 
         return dims;
     }

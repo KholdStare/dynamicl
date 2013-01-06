@@ -10,6 +10,29 @@
 namespace DynamiCL
 {
 
+    /**
+     * A simple RGBA pixel, of a particular component type
+     */
+    template <typename ComponentType>
+    union RGBA
+    {
+        typedef ComponentType component_type;
+        typedef component_type* iterator;
+        typedef component_type const* const_iterator;
+
+        struct
+        {
+            ComponentType r;
+            ComponentType g;
+            ComponentType b;
+            ComponentType a;
+        };
+        component_type components[4];
+
+        component_type&       operator[]( size_t i )       { return components[i]; }
+        component_type const& operator[]( size_t i ) const { return components[i]; }
+    };
+
     template <typename PixType, size_t N>
     class HostImage
     {
@@ -194,7 +217,7 @@ namespace DynamiCL
      */
     template <typename PixType, size_t N>
     HostImage<PixType, N-1>
-    collapseDimension(HostImage<PixType, N>& image)
+    collapseDimension(HostImage<PixType, N>&& image)
     {
         // create colapsed dimensions
         std::array<size_t, N-1> dims;

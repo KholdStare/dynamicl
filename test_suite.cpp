@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 
 
     // collapse dimension
-    HostImage<PixType, 2> collapsed = collapseDimension(imageArray);
+    HostImage<PixType, 2> collapsed = collapseDimension(std::move(imageArray));
     BOOST_CHECK_EQUAL( imageArray.valid(), false );
     BOOST_CHECK_EQUAL( imageArray.totalSize(), 0 );
     BOOST_CHECK_EQUAL( collapsed.valid(), true );

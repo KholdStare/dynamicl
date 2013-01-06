@@ -26,7 +26,7 @@ __constant const float sampling_kernel[5] = {
     01.f/16.f, 04.f/16.f, 06.f/16.f, 04.f/16.f, 01.f/16.f
 };
 
-__attribute__(( vec_type_hint (float4)))
+/*__attribute__(( vec_type_hint (float4)))*/
 __kernel void downsample_row(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     int2 out_coord = (int2)( get_global_id(0), get_global_id(1) );
@@ -41,7 +41,7 @@ __kernel void downsample_row(__read_only image2d_t input_image, __write_only ima
     write_imagef (output_image, out_coord, sample);
 }
 
-__attribute__(( vec_type_hint (float4)))
+/*__attribute__(( vec_type_hint (float4)))*/
 __kernel void downsample_col(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
 
@@ -137,6 +137,8 @@ __kernel void collapse_level( __read_only image2d_t blurred,
     float4 l = read_imagef (laplacian, g_sampler, coord);
 
     float4 c = b + l;
+    // TODO Shouldn't need this?
+    c = clamp(c, 0.0f, 1.0f);
 
     write_imagef (collapsed, coord, c);
 }
@@ -152,8 +154,10 @@ __kernel void fuse_level( __read_only  image2d_array_t array,
 
     for (int i = 0; i < depth; ++i)
     {
-        int4 array_coord = (int4)(coord.x, coord.y, depth, 0);
+        int4 array_coord = (int4)(coord.x, coord.y, i, 0);
         float4 pix = read_imagef (array, g_sampler, array_coord);
+
+        // TODO what if all weights are zero for pixel?
 
         // accumulate weight
         weight_sum += pix.s3;
@@ -221,11 +225,14 @@ __kernel void upsample_row(__read_only image2d_t input_image, __write_only image
 float sigma_squared_rgb(float4 pixel)
 {
     float4 squared = pown(pixel, 2);
-    float mean = ((float)pixel.s0 + pixel.s1 + pixel.s2) / 3;
+    float mean = ((float)pixel.s0 + pixel.s1 + pixel.s2) / 3.0f;
     float mean_squared = pown(mean, 2);
-    float mean_of_squared = ((float)squared.s0 + squared.s1 + squared.s2) / 3;
+    float mean_of_squared = ((float)squared.s0 + squared.s1 + squared.s2) / 3.0f;
 
-    return mean_of_squared - mean_squared;
+    // TODO due to floating point instability, answer can become negative
+    // if all values are equal. Find more stable algo.
+
+    return sqrt(fabs(mean_of_squared - mean_squared));
 }
 
 float well_exposedness(float4 pixel)
@@ -234,13 +241,14 @@ float well_exposedness(float4 pixel)
     float4 component_wise = exp( (float4) - (pown( pixel - 0.5f, 2 ) / denominator) );
 
     // create single measure for pixel
-    return component_wise.s0 * component_wise.s1 * component_wise.s2;
+    /*return component_wise.s0 * component_wise.s1 * component_wise.s2;*/
+    return component_wise.s0 + component_wise.s1 + component_wise.s2;
 }
 
 // part of quality measure.
 __constant const float discreet_laplacian[3][3] = {
     0.5f/6.f, 1.f/6.f, 0.5f/6.f,
-     1.f/6.f,   1.f,   1.f/6.f,
+     1.f/6.f,   -1.f,   1.f/6.f,
     0.5f/6.f, 1.f/6.f, 0.5f/6.f
 };
 
@@ -266,11 +274,14 @@ __kernel void compute_quality(__read_only image2d_t input_image, __write_only im
 
     float4 pixel = read_imagef (input_image, g_sampler, coord);
 
+    float sigma = sigma_squared_rgb(pixel);
+    float exposedness = well_exposedness(pixel);
+
     // assign quality measure to alpha channel
-    pixel.s3 = sigma_squared_rgb(pixel)
-                * well_exposedness(pixel)
-                * laplacian_measure
-                * 50;
+    // TODO multiples are ad hoc. do better
+    pixel.s3 = ( laplacian_measure * 3.0f )
+             + ( sigma * 1.5f )
+             + ( exposedness * 0.2f );
 
     write_imagef (output_image, coord, pixel);
 }
