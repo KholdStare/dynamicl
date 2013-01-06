@@ -9,6 +9,28 @@
 #endif
 
 #include <array>
+#include <type_traits>
+
+/**
+ * Some missing traits from OpenCL C++ headers
+ */
+namespace cl
+{
+
+    namespace detail
+    {
+
+        struct cl_image_info;
+        template<>
+        struct param_traits<detail::cl_image_info, CL_IMAGE_ARRAY_SIZE>
+        {
+            enum { value = CL_IMAGE_ARRAY_SIZE };
+            typedef ::size_t param_type;
+        };
+
+    }
+
+}
 
 namespace DynamiCL
 {
@@ -110,40 +132,60 @@ namespace DynamiCL
         struct image_traits<cl::Image1D>
         {
             static const size_t N = 1;
+            static const bool is_array = false;
             static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE1D;
             typedef cl::Image1D climage_type;
+
+            static constexpr cl_int dim_info[N] =
+                { CL_IMAGE_WIDTH };
         };
 
         template <>
         struct image_traits<cl::Image1DArray>
         {
             static const size_t N = 2;
+            static const bool is_array = true;
             static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE1D_ARRAY;
             typedef cl::Image1DArray climage_type;
+
+            static constexpr cl_int dim_info[N] =
+                { CL_IMAGE_WIDTH, CL_IMAGE_ARRAY_SIZE };
         };
 
         template <>
         struct image_traits<cl::Image2D>
         {
             static const size_t N = 2;
+            static const bool is_array = false;
             static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE2D;
             typedef cl::Image2D climage_type;
+
+            static constexpr cl_int dim_info[N] =
+                { CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT };
         };
 
         template <>
         struct image_traits<cl::Image2DArray>
         {
             static const size_t N = 3;
+            static const bool is_array = true;
             static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE2D_ARRAY;
             typedef cl::Image2DArray climage_type;
+
+            static constexpr cl_int dim_info[N] =
+                { CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_ARRAY_SIZE };
         };
 
         template <>
         struct image_traits<cl::Image3D>
         {
             static const size_t N = 3;
+            static const bool is_array = false;
             static const cl_mem_object_type mem_type = CL_MEM_OBJECT_IMAGE3D;
             typedef cl::Image3D climage_type;
+
+            static constexpr cl_int dim_info[N] =
+                { CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH };
         };
 
 
@@ -165,13 +207,29 @@ namespace DynamiCL
             desc.image_height = 0;
             if ( N > 1 )
             {
-                desc.image_height = dims[1];
+                if (image_traits<CLImage>::is_array
+                    && N == 2)
+                {
+                    desc.image_array_size = dims[1];
+                }
+                else 
+                {
+                    desc.image_height = dims[1];
+                }
             }
 
             desc.image_depth = 0;
             if ( N > 2 )
             {
-                desc.image_depth = dims[2];
+                if (image_traits<CLImage>::is_array
+                    && N == 3)
+                {
+                    desc.image_array_size = dims[2];
+                }
+                else 
+                {
+                    desc.image_depth = dims[2];
+                }
             }
 
             desc.image_row_pitch = 0;
@@ -216,6 +274,52 @@ namespace DynamiCL
         return detail::construct_image<CLImage>(c.context, dims, flags, hostPtr);
     }
 
+    namespace detail
+    {
+        template <typename CLImage, size_t END>
+        void get_dims_impl(CLImage const& image,
+                std::array<size_t, END>& dims,
+                std::integral_constant<size_t, END>,
+                std::integral_constant<size_t, END>)
+        {
+            static const size_t N = detail::image_traits<CLImage>::N;
+            typedef CLImage climage_type;
+
+            static_assert( END == N, "Iteration length has to be equal to image dimension.");
+        }
+
+        /**
+         * Compile time iteration to initialize std::array
+         * has to be done at compile-time since image could have any dimension,
+         * and compilation fails if we ask for an inexising dimension from it.
+         * E.g. Depth from an Image1D
+         */
+        template <typename CLImage, size_t N, size_t M, size_t END>
+        void get_dims_impl(CLImage const& image,
+                std::array<size_t, N>& dims,
+                std::integral_constant<size_t, M>,
+                std::integral_constant<size_t, END>)
+        {
+            typedef CLImage climage_type;
+
+            static_assert( detail::image_traits<CLImage>::N == N,
+                           "Array size must match dimensionality of image.");
+            static_assert( END == N, "Iteration length has to be equal to image dimension.");
+            static_assert( M < END, "Iteration index must not exceed image dimension.");
+
+            // perform actual assignment
+            dims[M] = image.template getImageInfo<
+                        detail::image_traits<climage_type>::dim_info[M]
+                    >();
+
+            // continue iteration
+            get_dims_impl(image, dims,
+                    std::integral_constant<size_t, M+1>(),
+                    std::integral_constant<size_t, END>());
+        }
+
+    }
+
     /**
      * Return OpenCL image dimensions in a std::array
      */
@@ -224,20 +328,34 @@ namespace DynamiCL
     getDims(CLImage const& image)
     {
         static const size_t N = detail::image_traits<CLImage>::N;
+        typedef CLImage climage_type;
 
         std::array<size_t, N> dims;
 
-        dims[0] = image.template getImageInfo<CL_IMAGE_WIDTH>();
+        detail::get_dims_impl(image, dims,
+                    std::integral_constant<size_t, 0>(),
+                    std::integral_constant<size_t, N>());
 
-        if ( N > 1 )
-        {
-            dims[1] = image.template getImageInfo<CL_IMAGE_HEIGHT>();
-        }
+        //for (size_t i = 0; i < N; ++i)
+        //{
+            //dims[i] = image.template getImageInfo<
+                        //detail::image_traits<climage_type>::dim_info[i]
+                    //>();
+        //}
 
-        if ( N > 2 )
-        {
-            dims[2] = image.template getImageInfo<CL_IMAGE_DEPTH>();
-        }
+        //if ( N > 1 )
+        //{
+            //dims[1] = image.template getImageInfo<
+                        //detail::image_traits<climage_type>::height_info
+                    //>();
+        //}
+
+        //if ( N > 2 )
+        //{
+            //dims[2] = image.template getImageInfo<
+                        //detail::image_traits<climage_type>::depth_info
+                    //>();
+        //}
 
         return dims;
     }

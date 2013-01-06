@@ -141,11 +141,11 @@ __kernel void collapse_level( __read_only image2d_t blurred,
     write_imagef (collapsed, coord, c);
 }
 
-__kernel void fuse_level( __read_only  image3d_t array,
+__kernel void fuse_level( __read_only  image2d_array_t array,
                           __write_only image2d_t fused)
 {
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
-    int depth = get_image_depth(array);
+    int depth = get_image_array_size(array);
 
     float4 acc = 0.0f;
     float weight_sum = 0.0f; // sum of all weights in alpha channel

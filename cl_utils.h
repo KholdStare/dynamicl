@@ -97,14 +97,14 @@ namespace DynamiCL
     }
 
     template <typename PixType, typename CLImage>
-    std::shared_ptr<HostImage<PixType, detail::image_traits<CLImage>::N>>
+    HostImage<PixType, detail::image_traits<CLImage>::N>
     makeHostImage(PendingImage<CLImage> const& pending)
     {
         static const size_t N = detail::image_traits<CLImage>::N;
         typedef HostImage<PixType, N> image_type;
 
-        auto out = std::make_shared<image_type>(pending.dimensions());
-        pending.readInto(out->rawData());
+        auto out = image_type(pending.dimensions());
+        pending.readInto(out.rawData());
 
         return out;
     }

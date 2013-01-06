@@ -342,7 +342,7 @@ namespace DynamiCL
                              "Creating Pyramid.\n"
                              "========================"
                           << std::endl;
-                ImagePyramid pyramid(context, *in, 8,
+                ImagePyramid pyramid(context, *in, 2,
                                      [&](Pending2DImage const& im)
                                      {
                                         return createPyramidLevel(im, program);

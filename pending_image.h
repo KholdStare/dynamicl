@@ -60,9 +60,23 @@ namespace DynamiCL
               events()
         { }
 
-        size_t width() const { return this->image.template getImageInfo<CL_IMAGE_WIDTH>(); }
-        size_t height() const { return this->image.template getImageInfo<CL_IMAGE_HEIGHT>(); }
-        size_t depth() const { return this->image.template getImageInfo<CL_IMAGE_DEPTH>(); }
+        size_t width() const {
+            return this->image.template getImageInfo<
+                        detail::image_traits<climage_type>::dim_info[0]
+                    >();
+        }
+
+        size_t height() const {
+            return this->image.template getImageInfo<
+                        detail::image_traits<climage_type>::dim_info[1]
+                    >();
+        }
+
+        size_t depth() const {
+            return this->image.template getImageInfo<
+                        detail::image_traits<climage_type>::dim_info[2]
+                    >();
+        }
 
         std::array<size_t, N> dimensions() const
         {

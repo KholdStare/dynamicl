@@ -1,4 +1,5 @@
 #include "image_pyramid.h"
+#include <iostream>
 
 namespace DynamiCL
 {
@@ -17,13 +18,13 @@ namespace DynamiCL
         {
             LevelPair pair = createNext(image);
 
-            levels_.push_back( std::move(*makeHostImage<pixel_type>(pair.upper)) );
+            levels_.push_back( std::move(makeHostImage<pixel_type>(pair.upper)) );
 
             image = std::move(pair.lower);
         }
 
         // last level is byproduct of last creation
-        levels_.push_back( std::move(*makeHostImage<pixel_type>(image)) );
+        levels_.push_back( std::move(makeHostImage<pixel_type>(image)) );
     }
 
     ImagePyramid::image_type ImagePyramid::collapse(CollapseLevelFunc collapseLevel)
@@ -91,7 +92,9 @@ namespace DynamiCL
             pyramidGuts.push_back(pyramid.releaseLevels());
         }
 
-        return ImagePyramid(context, std::move(pyramidGuts[0]));
+        std::cout << "Extracted Guts" << std::endl;
+
+        //return ImagePyramid(context, std::move(pyramidGuts[0]));
 
         // outer vector: represents collection of levels
         // inner vector: single level from all pyramids
@@ -118,23 +121,42 @@ namespace DynamiCL
         // and increases from there
         assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
 
+        std::cout << "Aligned " << levelCollection.size() << " levels" << std::endl;
+
         // ===================================================
         // now we can fuse each level individually
         std::vector<image_type> fusedLevels;
 
+        // fuse all levels
         while(!levelCollection.empty())
         {
             // these image have to be fused
             std::vector<image_type> singleLevel = std::move(levelCollection.back());
+            std::cout << "Level has "
+                      << singleLevel.size()
+                      << " images to be fused" << std::endl;
             levelCollection.pop_back();
 
             // create contiguous image array in memory
             HostImage<pixel_type, 3> levelArray(singleLevel);
             singleLevel.clear(); // deallocate subimages
 
+            Pending2DImageArray clarray =
+                makePendingImage<cl::Image2DArray>(context, levelArray);
+
+            std::cout << "Dimensions: "
+                      << clarray.width() << " x "
+                      << clarray.height() << " x"
+                      << clarray.depth() << std::endl;
+
+            Pending2DImage fused = fuseLevels(clarray);
+
+            fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
         }
 
+        std::cout << "Fused " << fusedLevels.size() << " levels" << std::endl;
 
+        return ImagePyramid(context, std::move(fusedLevels));
     }
 
 } /* DynamiCL */ 
