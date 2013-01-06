@@ -194,14 +194,37 @@ namespace DynamiCL
     namespace Pending
     {
 
-        //template <typename CLImage, typename >
-        //static PendingImage<CLImage>
-        //process(Kernel const& kernel
-                //std::array<size_t, detail::image_traits<CLImage>::N> const& dims
-               //) const
-        //{
+        /**
+         * @note have to manually specify CLImage type for output
+         */
+        template <typename CLImage, typename... Ts >
+        static PendingImage<CLImage>
+        process(ComputeContext const& context,
+                Kernel const& kernel,
+                std::array<size_t, detail::image_traits<CLImage>::N> const& dims,
+                cl::NDRange const& kernelRange,
+                PendingImage<Ts> const&... inputs)
+        {
+            typedef PendingImage<CLImage> pending_type;
 
-        //}
+            auto result = createCLImage<CLImage>(context, dims);
+
+            cl::Kernel clkernel = kernel.build(inputs.image... , result);
+                        
+            cl::Event complete;
+            std::vector<cl::Event> waitfor = aggregateEvents(inputs...);
+            context.queue.enqueueNDRangeKernel(clkernel,
+                                       cl::NullRange,
+                                       kernelRange,
+                                       cl::NullRange, 
+                                       &waitfor,
+                                       &complete);
+
+            pending_type pendingResult(context, result);
+            pendingResult.events.push_back(complete);
+
+            return pendingResult;
+        }
 
     }
 

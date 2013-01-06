@@ -195,31 +195,19 @@ namespace DynamiCL
 
         Kernel createLaplacian = {program, "create_laplacian", Kernel::Range::SOURCE};
 
-        cl::Image2D laplacianImage(gpu.context,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                width,
-                height);
-
-        cl::Kernel clkernel =
-            createLaplacian.build(inputImage.image,
-                                  pendingUpRow.image,
-                                  laplacianImage);
-                    
-        cl::Event complete;
-        gpu.queue.enqueueNDRangeKernel(clkernel,
-                                   cl::NullRange,
-                                   cl::NDRange(width, height),
-                                   cl::NullRange, 
-                                   &pendingUpRow.events,
-                                   &complete);
-
-        Pending2DImage finalResult(gpu, laplacianImage);
-        finalResult.events.push_back(complete);
+        Pending2DImage pendingResult = 
+            Pending::process<cl::Image2D>
+            (
+                    gpu,
+                    createLaplacian,
+                    inputImage.dimensions(), // dimensions
+                    toNDRange(inputImage.dimensions()), // problem range
+                    inputImage, pendingUpRow // input images
+            );
 
         std::cout << "Created Laplacian" << std::endl;
 
-        return {std::move(finalResult), std::move(downsampled)};
+        return {std::move(pendingResult), std::move(downsampled)};
     }
 
     
@@ -260,37 +248,19 @@ namespace DynamiCL
 
         Kernel collapse= {program, "collapse_level", Kernel::Range::SOURCE};
 
-        // TODO: add utility function for processing several image
-        // into one output image.
-
-        cl::Image2D collapsedImage(context.context,
-                CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-                cl::ImageFormat(CL_RGBA, CL_FLOAT),
-                upperWidth,
-                upperHeight);
-
-        cl::Kernel clkernel =
-            collapse.build(pendingUpRow.image,
-                                  pair.upper.image,
-                                  collapsedImage);
-                    
-        cl::Event complete;
-        std::vector<cl::Event> waitfor =
-            aggregateEvents(pendingUpRow, pair.upper);
-
-        context.queue.enqueueNDRangeKernel(clkernel,
-                                   cl::NullRange,
-                                   cl::NDRange(upperWidth, upperHeight),
-                                   cl::NullRange, 
-                                   &waitfor,
-                                   &complete);
-
-        Pending2DImage finalResult(context, collapsedImage);
-        finalResult.events.push_back(complete);
+        auto pendingResult =
+            Pending::process<cl::Image2D>
+            (
+                context,
+                collapse,
+                pair.upper.dimensions(),
+                toNDRange(pair.upper.dimensions()),
+                pendingUpRow, pair.upper
+            );
 
         std::cout << "Created Laplacian" << std::endl;
 
-        return finalResult;
+        return pendingResult;
     }
 
     Pending2DImage
