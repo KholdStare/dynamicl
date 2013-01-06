@@ -6,6 +6,8 @@
 
 namespace DynamiCL
 {
+    template <typename CLImage>
+    struct PendingImage;
 
     /**
      * A type trait to see if a type is a pending image.
@@ -153,13 +155,55 @@ namespace DynamiCL
          */
         PendingImage process(Kernel const& kernel) const;
 
-
         /**
          * Read image into host memory
          */
         void readInto(void* hostPtr) const;
         
     };
+
+    namespace detail
+    {
+
+        inline void aggregate_events_impl(std::vector<cl::Event>& vec)
+        { }
+
+        template <typename T, typename... Ts>
+        void aggregate_events_impl(std::vector<cl::Event>& vec, 
+                                   PendingImage<T> const& first,
+                                   PendingImage<Ts> const&... rest)
+        {
+            vec.insert(end(vec), begin(first.events), end(first.events));
+            aggregate_events_impl(vec, rest...);
+        }
+
+    }
+
+    template <typename... Ts>
+    std::vector<cl::Event>
+    aggregateEvents(PendingImage<Ts> const&... images)
+    {
+        std::vector<cl::Event> vec;
+        detail::aggregate_events_impl(vec, images...);
+        return vec;
+    }
+
+    /**
+     * Some non-member functions to help with PendingImages
+     */
+    namespace Pending
+    {
+
+        //template <typename CLImage, typename >
+        //static PendingImage<CLImage>
+        //process(Kernel const& kernel
+                //std::array<size_t, detail::image_traits<CLImage>::N> const& dims
+               //) const
+        //{
+
+        //}
+
+    }
 
 
     template <typename CLImage>

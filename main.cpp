@@ -275,15 +275,14 @@ namespace DynamiCL
                                   collapsedImage);
                     
         cl::Event complete;
-        pendingUpRow.events.insert(end(pendingUpRow.events),
-                                   begin(pair.upper.events),
-                                   end(pair.upper.events));
+        std::vector<cl::Event> waitfor =
+            aggregateEvents(pendingUpRow, pair.upper);
 
         context.queue.enqueueNDRangeKernel(clkernel,
                                    cl::NullRange,
                                    cl::NDRange(upperWidth, upperHeight),
                                    cl::NullRange, 
-                                   &pendingUpRow.events,
+                                   &waitfor,
                                    &complete);
 
         Pending2DImage finalResult(context, collapsedImage);
