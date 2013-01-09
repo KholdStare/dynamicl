@@ -40,47 +40,6 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
     HostImage<PixType, 2> image(width, height);
 
     BOOST_CHECK_EQUAL( image.valid(), true );
-    BOOST_CHECK_EQUAL( image.totalSize(), width*height );
-    BOOST_CHECK_EQUAL( image.width(), width );
-    BOOST_CHECK_EQUAL( image.height(), height );
-
-    char* b = reinterpret_cast<char*>(image.begin());
-    char* e = reinterpret_cast<char*>(image.end());
-
-    BOOST_CHECK_EQUAL( e-b, width*height*sizeof(PixType) );
-
-    // generate random data
-    std::vector<PixType> input(image.totalSize());
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<unsigned char> d(0, 255);
-    std::generate(input.begin(), input.end(),
-                  [&]() { return d(gen); });
-
-    // populate with random data
-    std::copy(input.begin(), input.end(), image.begin());
-    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
-                                  image.begin(), image.end());
-
-    // move test
-    HostImage<PixType, 2> moved(std::move(image));
-
-    BOOST_CHECK_EQUAL( image.valid(), false );
-    BOOST_CHECK_EQUAL( image.totalSize(), 0 );
-    BOOST_CHECK_EQUAL( moved.valid(), true );
-    BOOST_CHECK_EQUAL( moved.totalSize(), width*height );
-    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
-                                  moved.begin(), moved.end());
-
-}
-
-BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops_new, PixType, pix_types)
-{
-    size_t width = 4;
-    size_t height = 3;
-    HostImageBlah<PixType, 2> image(width, height);
-
-    BOOST_CHECK_EQUAL( image.valid(), true );
     BOOST_CHECK_EQUAL( image.view().totalSize(), width*height );
     BOOST_CHECK_EQUAL( image.view().width(), width );
     BOOST_CHECK_EQUAL( image.view().height(), height );
@@ -104,7 +63,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops_new, PixType, pix_types)
                                   image.view().begin(), image.view().end());
 
     // move test
-    HostImageBlah<PixType, 2> moved(std::move(image));
+    HostImage<PixType, 2> moved(std::move(image));
 
     BOOST_CHECK_EQUAL( image.view().valid(), false );
     BOOST_CHECK_EQUAL( image.view().totalSize(), 0 );
@@ -122,73 +81,6 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
     size_t depth = 5;
 
     typedef HostImage<PixType, 2> subimage_type;
-    std::vector< subimage_type > subimages;
-
-    std::generate_n(std::back_inserter(subimages), depth,
-                    [&]() { return subimage_type(width, height); });
-
-    // assert sizes
-    for (auto&& image : subimages)
-    {
-        BOOST_CHECK_EQUAL( image.valid(), true );
-        BOOST_CHECK_EQUAL( image.totalSize(), width*height );
-        BOOST_CHECK_EQUAL( image.width(), width );
-        BOOST_CHECK_EQUAL( image.height(), height );
-    }
-
-    // generate random data
-    size_t total = width*height*depth;
-    std::vector<PixType> input(total);
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<unsigned char> d(0, 255);
-    std::generate(input.begin(), input.end(),
-                  [&]() { return d(gen); });
-
-    // populate with random data
-    auto inputIt = input.begin();
-    size_t pitch = width*height;
-    for (auto&& image : subimages)
-    {
-        std::copy(inputIt, inputIt + pitch,
-                  image.begin());
-        BOOST_CHECK_EQUAL_COLLECTIONS(inputIt, inputIt + pitch,
-                                      image.begin(), image.end());
-        inputIt += pitch;
-    }
-
-    // create array
-    HostImage<PixType, 3> imageArray(subimages);
-
-    BOOST_CHECK_EQUAL( imageArray.valid(), true );
-    BOOST_CHECK_EQUAL( imageArray.totalSize(), total );
-    BOOST_CHECK_EQUAL( imageArray.width(), width );
-    BOOST_CHECK_EQUAL( imageArray.height(), height );
-    BOOST_CHECK_EQUAL( imageArray.depth(), depth );
-    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
-                                  imageArray.begin(), imageArray.end());
-
-
-    // collapse dimension
-    HostImage<PixType, 2> collapsed = collapseDimension(std::move(imageArray));
-    BOOST_CHECK_EQUAL( imageArray.valid(), false );
-    BOOST_CHECK_EQUAL( imageArray.totalSize(), 0 );
-    BOOST_CHECK_EQUAL( collapsed.valid(), true );
-    BOOST_CHECK_EQUAL( collapsed.totalSize(), total );
-    BOOST_CHECK_EQUAL( collapsed.width(), width );
-    BOOST_CHECK_EQUAL( collapsed.height(), height*depth );
-    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
-                                  collapsed.begin(), collapsed.end());
-
-}
-
-BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction_new, PixType, pix_types )
-{
-    size_t width = 4;
-    size_t height = 3;
-    size_t depth = 5;
-
-    typedef HostImageBlah<PixType, 2> subimage_type;
     std::vector< subimage_type > subimages;
 
     std::generate_n(std::back_inserter(subimages), depth,
@@ -225,7 +117,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction_new, PixType, pix_types 
     }
 
     // create array
-    HostImageBlah<PixType, 3> imageArray(subimages);
+    HostImage<PixType, 3> imageArray(subimages);
 
     BOOST_CHECK_EQUAL( imageArray.valid(), true );
     BOOST_CHECK_EQUAL( imageArray.view().totalSize(), total );
@@ -237,8 +129,8 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction_new, PixType, pix_types 
 
 
     // collapse dimension
-    //HostImageBlah<PixType, 2> collapsed = collapseDimension(std::move(imageArray));
-    HostImageBlah<PixType, 2> collapsed(std::move(imageArray));
+    //HostImage<PixType, 2> collapsed = collapseDimension(std::move(imageArray));
+    HostImage<PixType, 2> collapsed(std::move(imageArray));
     BOOST_CHECK_EQUAL( imageArray.valid(), false );
     BOOST_CHECK_EQUAL( imageArray.view().totalSize(), 0 );
     BOOST_CHECK_EQUAL( collapsed.valid(), true );

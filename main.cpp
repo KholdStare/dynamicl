@@ -70,7 +70,7 @@ namespace DynamiCL
         auto out = std::make_shared<FloatImage>(in.width(), in.height());
 
         // transform using unary function
-        std::transform(in.begin(), in.end(), out->begin(),
+        std::transform(in.begin(), in.end(), out->view().begin(),
                        convertPixelToFloat4<InComponentType>);
         // TODO: huge bottleneck! must improve
 
@@ -148,13 +148,13 @@ namespace DynamiCL
                 // determine pyramid depth if this is a first image in sequence
                 if (subpyramids.empty())
                 {
-                    width = in->width();
-                    height = in->height();
+                    width = in->view().width();
+                    height = in->view().height();
 
                     maxLevels = calculateNumLevels(width, height);
                 }
                 // if subsequent images in sequence, check that sizes match
-                else if (width != in->width() || height != in->height()) {
+                else if (width != in->view().width() || height != in->view().height()) {
                     throw std::runtime_error("Image dimensions in sequence are not equal!");
                 }
                 
@@ -163,7 +163,7 @@ namespace DynamiCL
                              "Creating Quality Mask.\n"
                              "========================"
                           << std::endl;
-                processImageInPlace(*in, quality, context);
+                processImageInPlace(in->view(), quality, context);
 
                 // build pyramid
                 std::cout << "========================\n"

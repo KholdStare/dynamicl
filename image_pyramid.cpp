@@ -14,7 +14,7 @@ namespace DynamiCL
     {
         levels_.reserve(numLevels);
 
-        Pending2DImage image = makePendingImage<climage_type>(context, startImage);
+        Pending2DImage image = makePendingImage<climage_type>(context, startImage.view());
 
         // create levels one at a time
         for (size_t level = 1; level < numLevels; ++level)
@@ -48,13 +48,13 @@ namespace DynamiCL
             };
 
         image_type lower = nextLevel();
-        Pending2DImage result = makePendingImage<climage_type>(context_, lower);
+        Pending2DImage result = makePendingImage<climage_type>(context_, lower.view());
         image_type upper = nextLevel();
 
         // keep collapsing layers
         while(upper.valid())
         {
-            Pending2DImage u = makePendingImage<climage_type>(context_, upper);
+            Pending2DImage u = makePendingImage<climage_type>(context_, upper.view());
             // create pair to pass to the collapser
             LevelPair pair {std::move(u), std::move(result)};
 
@@ -66,7 +66,7 @@ namespace DynamiCL
             upper = nextLevel();
         }
 
-        result.readInto(lower.rawData());
+        result.readInto(lower.view().rawData());
         return lower;
     }
 
@@ -124,7 +124,7 @@ namespace DynamiCL
         // and increases from there
         if ( levelCollection.size() > 1 )
         {
-            assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
+            assert( levelCollection[0][0].view().width() < levelCollection[1][0].view().width() );
         }
 
         std::cout << "Have to fuse " << levelCollection.size() << " levels" << std::endl;
@@ -146,7 +146,7 @@ namespace DynamiCL
             singleLevel.clear(); // deallocate subimages
 
             Pending2DImageArray clarray =
-                makePendingImage<cl::Image2DArray>(context, levelArray);
+                makePendingImage<cl::Image2DArray>(context, levelArray.view());
 
             //std::stringstream sstr;
             //sstr << "level_test" << l << ".tiff";

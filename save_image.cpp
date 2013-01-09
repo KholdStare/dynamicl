@@ -43,10 +43,10 @@ namespace DynamiCL
         exportInfo.setPixelType("UINT16");
         //exportInfo.setCompression("LZW"); // TODO: major bottleneck
 
-        OutImgType out(in.width(), in.height());
+        OutImgType out(in.view().width(), in.view().height());
 
         // transform
-        std::transform(in.begin(), in.end(), out.begin(),
+        std::transform(in.view().begin(), in.view().end(), out.begin(),
                        convertPixelFromFloat4<OutComponentType>);
 
         // write the image to the file given as second argument

@@ -45,7 +45,7 @@ namespace DynamiCL
 
     template <typename CLImage, typename PixType, size_t N>
     PendingImage<CLImage>
-    makePendingImage(ComputeContext const& context, HostImage<PixType, N> const& image)
+    makePendingImage(ComputeContext const& context, HostImageView<PixType, N> const& image)
     {
         typedef CLImage climage_type;
         typedef PendingImage<climage_type> pending_type;
@@ -65,7 +65,7 @@ namespace DynamiCL
      * it inplace using an OpenCL kernel.
      */
     template <typename PixType, size_t N>
-    void processImageInPlace(HostImage<PixType, N>& image,
+    void processImageInPlace(HostImageView<PixType, N>& image,
                               Kernel const& kernel,
                               ComputeContext const& context)
     {
@@ -82,7 +82,7 @@ namespace DynamiCL
         typedef HostImage<PixType, N> image_type;
 
         auto out = image_type(pending.dimensions());
-        pending.readInto(out.rawData());
+        pending.readInto(out.view().rawData());
 
         return out;
     }
