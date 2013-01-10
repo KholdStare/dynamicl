@@ -76,9 +76,9 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
 
 BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 {
-    size_t width = 4;
-    size_t height = 3;
-    size_t depth = 5;
+    size_t width = 40;
+    size_t height = 30;
+    size_t depth = 50;
 
     typedef HostImage<PixType, 2> subimage_type;
     std::vector< subimage_type > subimages;
@@ -127,6 +127,27 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
     BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
                                   imageArray.view().begin(), imageArray.view().end());
 
+    // access through views
+    for (size_t i = 0; i < imageArray.view().depth(); ++i)
+    {
+        HostImageView<PixType, 2> subview = imageArray.view()[i];
+        size_t offset = width*height*i;
+        size_t offsetEnd = width*height*(i+1);
+        BOOST_CHECK_EQUAL_COLLECTIONS(subview.begin(), subview.end(),
+                                  imageArray.view().begin() + offset,
+                                  imageArray.view().begin() + offsetEnd);
+
+        for (size_t j = 0; j < imageArray.view().height(); ++j)
+        {
+            HostImageView<PixType, 1> imageLine = subview[j];
+            size_t lineOffset = offset + width*j;
+            size_t lineOffsetEnd = offset + width*(j+1);
+            BOOST_CHECK_EQUAL_COLLECTIONS(imageLine.begin(), imageLine.end(),
+                                      imageArray.view().begin() + lineOffset,
+                                      imageArray.view().begin() + lineOffsetEnd);
+
+        }
+    }
 
     // collapse dimension
     //HostImage<PixType, 2> collapsed = collapseDimension(std::move(imageArray));

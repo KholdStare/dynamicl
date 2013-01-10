@@ -33,6 +33,13 @@ namespace DynamiCL
         component_type const& operator[]( size_t i ) const { return components[i]; }
     };
 
+    /**
+     * Represents a "View" onto a contiguous chunk of memory,
+     * as an N dimensional image/buffer of PixType structures.
+     *
+     * Does not manage the pointed-to memory, and allows conversions to other
+     * views- such as subimages of an image array.
+     */
     template <typename PixType, size_t N>
     class HostImageView
     {
@@ -66,6 +73,16 @@ namespace DynamiCL
             : dims_(dims),
               data_(data)
         { }
+
+        template <typename SizeIt>
+        HostImageView(SizeIt first, SizeIt last, PixType* data)
+            : data_(data)
+        { 
+            // make sure amount of dimensions supplied is equivalent
+            assert(std::distance(first, last) == N);
+
+            std::copy(first, last, dims_.begin());
+        }
 
         HostImageView()
         { 
@@ -143,8 +160,24 @@ namespace DynamiCL
         void const* rawData() const { return static_cast<void const*>(begin()); }
         void*       rawData()       { return static_cast<void*>(begin()); }
 
+        HostImageView<PixType, N-1> operator [](size_t index)
+        {
+            // calculate dimension of subimage
+            std::array<size_t, N-1> dims;
+            std::copy_n(dims_.begin(), N-1, dims.begin());
+            size_t subimageSize =
+                std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
+
+            return HostImageView<PixType, N-1>(dims, data_ + (index*subimageSize));
+        }
+
+
     };
 
+    /**
+     * Manages an N-dimensional buffer of PixType objects in memory,
+     * which can be accessed through a HostImageView.
+     */
     template <typename PixType, size_t N>
     class HostImage : private HostImageView<PixType, N>
     {
@@ -202,13 +235,12 @@ namespace DynamiCL
         HostImage(std::vector<HostImage<PixType, N-1>> const& subimages);
 
         /**
-         * Transfer data from one image into another, but reduce
+         * Transfer data from one image into a new one, but reduce
          * dimensionality.
          *
          * i.e. 3D image becomes 2D, where the last dimensions is
          * a collapsing of two- 3x4x5 -> 3x20
          */
-        // TODO: update comment
         HostImage(HostImage<PixType, N+1>&& toBeCollapsed)
         {
             // create colapsed dimensions
@@ -239,10 +271,6 @@ namespace DynamiCL
         HostImage& operator =(HostImage&& other)
         {
             view_type::operator=(std::move(other));
-            //std::copy_n(other.dims_.begin(), N, dims_.begin());
-            //pixArray_ = other.pixArray_;
-
-            //other.view_type::invalidate();
             return *this;
         }
 
@@ -259,6 +287,9 @@ namespace DynamiCL
             return valid();
         }
 
+        /**
+         * Return a view of the memory buffer.
+         */
         view_type& view() { return *this; }
         view_type const& view() const { return *this; }
 
