@@ -22,6 +22,7 @@ namespace DynamiCL
     public:
         typedef RGBA<float> pixel_type;
         typedef HostImage<pixel_type, 2> image_type;
+        typedef HostImageView<pixel_type, 2> view_type;
         typedef cl::Image2D climage_type;
 
         /**
@@ -53,7 +54,7 @@ namespace DynamiCL
          * from the @a startImage, using a specified NextLevelFunc
          */
         ImagePyramid( ComputeContext const& context,
-                      image_type& startImage,
+                      view_type const& startImage,
                       size_t numLevels,
                       NextLevelFunc);
 

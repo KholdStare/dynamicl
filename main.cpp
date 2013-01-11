@@ -7,8 +7,7 @@
 
 #include "cl_utils.h"
 #include "utils.h"
-#include "image_pyramid.h"
-#include "pyr_impl.h"
+#include "merge_group.h"
 #include "save_image.h"
 
 #include "plumbingplusplus/plumbing.hpp"
@@ -99,59 +98,24 @@ namespace DynamiCL
         ComputeContext const& context;
         cl::Program const& program;
 
-        FloatImage fuseGroup(std::vector<ImagePyramid>&& group)
-        {
-            std::cout << "========================\n"
-                         "Fusing Pyramids.\n"
-                         "========================"
-                      << std::endl;
-
-            ImagePyramid fused =
-                ImagePyramid::fuse(group,
-                    [&](Pending2DImageArray const& im)
-                    {
-                        return fusePyramidLevel(im, program);
-                    }
-                );
-            group.clear();
-
-            std::cout << "========================\n"
-                         "Collapsing Pyramid.\n"
-                         "========================"
-                      << std::endl;
-
-            FloatImage collapsed =
-                fused.collapse(
-                    [&](ImagePyramid::LevelPair const& pair)
-                    {
-                        return collapsePyramidLevel(pair, program);
-                    }
-                );
-
-            return collapsed;
-        }
-
         // from shared_ptr image to shared_ptr of image
         template <typename InputIt, typename OutputIt>
         void operator() (InputIt cur, InputIt last, OutputIt dest)
         {
             Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
-            std::vector<ImagePyramid> subpyramids;
             size_t width = 1;
             size_t height = 1;
-            size_t maxLevels = 1;
+            MergeGroup group(context, program);
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
 
                 // determine pyramid depth if this is a first image in sequence
-                if (subpyramids.empty())
+                if (group.empty())
                 {
                     width = in->view().width();
                     height = in->view().height();
-
-                    maxLevels = calculateNumLevels(width, height);
                 }
                 // if subsequent images in sequence, check that sizes match
                 else if (width != in->view().width() || height != in->view().height()) {
@@ -165,25 +129,13 @@ namespace DynamiCL
                           << std::endl;
                 processImageInPlace(in->view(), quality, context);
 
-                // build pyramid
-                std::cout << "========================\n"
-                             "Creating Pyramid.\n"
-                             "========================"
-                          << std::endl;
-                ImagePyramid pyramid(context, *in, maxLevels,
-                                     [&](Pending2DImage const& im)
-                                     {
-                                        return createPyramidLevel(im, program);
-                                     });
-
-                // move pyramid into local collection
-                subpyramids.push_back(std::move(pyramid));
+                // add image to group
+                group.addImage(in->view());
 
                 // as soon as we can merge, do so
-                if (subpyramids.size() == 3)
+                if (group.numImages() == 3)
                 {
-                    FloatImage collapsed = fuseGroup(std::move(subpyramids));
-                    subpyramids.clear();
+                    FloatImage collapsed = group.merge();
 
                     std::cout << "========================\n"
                                  "HDR Merge complete.\n"

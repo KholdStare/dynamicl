@@ -7,14 +7,14 @@
 namespace DynamiCL
 {
     ImagePyramid::ImagePyramid( ComputeContext const& context,
-                      image_type& startImage,
+                      view_type const& startImage,
                       size_t numLevels,
                       NextLevelFunc createNext)
         : context_(context)
     {
         levels_.reserve(numLevels);
 
-        Pending2DImage image = makePendingImage<climage_type>(context, startImage.view());
+        Pending2DImage image = makePendingImage<climage_type>(context, startImage);
 
         // create levels one at a time
         for (size_t level = 1; level < numLevels; ++level)
