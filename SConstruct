@@ -27,8 +27,9 @@ commonSource = ['utils.cpp',
                 'cl_utils.cpp',
                 'pending_image.cpp',
                 'image_pyramid.cpp',
+                'pyr_impl.cpp',
                 'save_image.cpp' ]
-mainSource = ['main.cpp', 'pyr_impl.cpp', 'merge_group.cpp' ]
+mainSource = ['main.cpp',  'merge_group.cpp' ]
 testSource = ['test_suite.cpp']
 
 mainSource.extend(commonSource)

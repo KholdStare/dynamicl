@@ -138,13 +138,14 @@ namespace DynamiCL
                 // as soon as we can merge, do so
                 if (group->numImages() == 3)
                 {
-                    FloatImage collapsed = group->merge();
+                    group->mergeInto(in->view());
 
                     std::cout << "========================\n"
                                  "HDR Merge complete.\n"
                                  "========================"
                               << std::endl;
-                    *dest = std::make_shared<FloatImage>(std::move(collapsed));
+                    //*dest = std::make_shared<FloatImage>(std::move(collapsed));
+                    *dest = in;
                     dest++;
                     std::cout << std::endl;
                 }
@@ -191,7 +192,7 @@ int main(int argc, char const *argv[])
             sstr << "out" << currentIndex << ".tiff";
 
             // save image
-            saveTiff16(*im, sstr.str());
+            saveTiff16(im->view(), sstr.str());
             ++currentIndex;
         };
 

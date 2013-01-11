@@ -5,6 +5,14 @@
 
 namespace DynamiCL
 {
+    /**
+     * Return how halving of a dimension happens
+     * in the pyramid construction.
+     */
+    inline size_t halveDimension(size_t n)
+    {
+        return (n + 1) / 2;
+    }
 
     ImagePyramid::LevelPair
     createPyramidLevel(Pending2DImage const& inputImage,
@@ -23,6 +31,12 @@ namespace DynamiCL
      * allowable levels for a laplacian pyramid
      */
     size_t calculateNumLevels(size_t width, size_t height);
+
+    /**
+     * @Return total number of pixels required to store
+     * an image pyramid of numLevels
+     */
+    size_t pyramidSize(size_t width, size_t height, size_t numLevels);
 
 }
 

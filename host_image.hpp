@@ -33,6 +33,7 @@ namespace DynamiCL
         component_type const& operator[]( size_t i ) const { return components[i]; }
     };
 
+    // TODO: keep hostimage alive while references exist?
     /**
      * Represents a "View" onto a contiguous chunk of memory,
      * as an N dimensional image/buffer of PixType structures.
@@ -90,8 +91,19 @@ namespace DynamiCL
         }
 
         // TODO: enable copying of views
-        HostImageView(HostImageView const& other) = delete;
-        HostImageView& operator =(HostImageView const& other) = delete;
+        HostImageView(HostImageView const& other)
+            : dims_(other.dims_),
+              data_(other.data_)
+        { }
+
+        HostImageView& operator =(HostImageView const& other)
+        {
+            dims_ = other.dims_;
+            data_ = other.data_;
+        }
+
+        // TODO: explicit copy
+        HostImageView copy() const { return HostImageView(dims_, data_); }
 
         // move constructor
         HostImageView(HostImageView&& other)
@@ -232,7 +244,7 @@ namespace DynamiCL
          *
          * @note input images are deallocated.
          */
-        HostImage(std::vector<HostImage<PixType, N-1>> const& subimages);
+        HostImage(std::vector<HostImageView<PixType, N-1>> const& subimages);
 
         /**
          * Transfer data from one image into a new one, but reduce
@@ -293,32 +305,41 @@ namespace DynamiCL
         view_type& view() { return *this; }
         view_type const& view() const { return *this; }
 
+        /**
+         * Return the amount of bytes an image of the 
+         * specified dimensions would occupy
+         */
+        static size_t calculateBytes(std::array<size_t, N> const& dims)
+        {
+            return view_type::multDims(dims) * sizeof(PixType);
+        }
+
     };
 
     template <typename PixType, size_t N>
-    HostImage<PixType, N>::HostImage(std::vector<HostImage<PixType, N-1>> const& subimages)
+    HostImage<PixType, N>::HostImage(std::vector<HostImageView<PixType, N-1>> const& subimages)
     {
         assert(subimages.size() > 0);
 
         view_type::dims_[N-1] = subimages.size();
 
         // copy the first image dimensions
-        std::array<size_t, N-1> const& otherdims = subimages[0].view().dimensions();
+        std::array<size_t, N-1> const& otherdims = subimages[0].dimensions();
         std::copy(otherdims.begin(), otherdims.end(), view_type::dims_.begin());
 
         // can now allocate space
         view_type::data_ = new PixType[view().totalSize()];
         PixType* writePtr = view_type::data_; // current write point
 
-        typedef HostImage<PixType, N-1> subimage_type;
+        typedef HostImageView<PixType, N-1> subimage_type;
         for(subimage_type const& subimage : subimages)
         {
             // ensure all dimensions match
-            assert( std::equal( subimage.view().dimensions().begin(),
-                                subimage.view().dimensions().end(),
+            assert( std::equal( subimage.dimensions().begin(),
+                                subimage.dimensions().end(),
                                 view().dimensions().begin() ) );
 
-            writePtr = std::copy( subimage.view().begin(), subimage.view().end(), writePtr );
+            writePtr = std::copy( subimage.begin(), subimage.end(), writePtr );
         }
     }
 

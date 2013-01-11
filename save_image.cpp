@@ -31,7 +31,7 @@ namespace
 namespace DynamiCL
 {
     
-    void saveTiff16(FloatImage const& in, std::string const& outPath)
+    void saveTiff16(FloatImageView const& in, std::string const& outPath)
     {
         typedef vigra::TinyVector< float, 4 > InPixelType;
         typedef vigra::UInt16 OutComponentType;
@@ -43,10 +43,10 @@ namespace DynamiCL
         exportInfo.setPixelType("UINT16");
         //exportInfo.setCompression("LZW"); // TODO: major bottleneck
 
-        OutImgType out(in.view().width(), in.view().height());
+        OutImgType out(in.width(), in.height());
 
         // transform
-        std::transform(in.view().begin(), in.view().end(), out.begin(),
+        std::transform(in.begin(), in.end(), out.begin(),
                        convertPixelFromFloat4<OutComponentType>);
 
         // write the image to the file given as second argument

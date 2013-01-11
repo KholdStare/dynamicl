@@ -4,10 +4,6 @@
 namespace
 {
 
-    inline size_t halveDimension(size_t n)
-    {
-        return (n + 1) / 2;
-    }
 
 }
 
@@ -201,6 +197,24 @@ namespace DynamiCL
         }
 
         return levels;
+    }
+
+    size_t pyramidSize(size_t width, size_t height, size_t numLevels)
+    {
+
+        size_t levelWidth = width;
+        size_t levelHeight = height;
+
+        size_t numPixels = 0;
+        
+        for (size_t level = numLevels; level > 0; --level)
+        {
+            numPixels += levelWidth*levelHeight;
+            levelWidth = halveDimension(levelWidth);
+            levelHeight = halveDimension(levelHeight);
+        }
+
+        return numPixels;
     }
 
 }

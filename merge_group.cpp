@@ -13,8 +13,11 @@ namespace DynamiCL
           program_(program),
           width_(width),
           height_(height),
-          numLevels_(calculateNumLevels(width, height))
-    { }
+          numLevels_(calculateNumLevels(width, height)),
+          pixelsPerPyramid(pyramidSize(width, height, numLevels_))
+    { 
+        // calculate space needed for merging
+    }
 
     MergeGroup::MergeGroup(MergeGroup&& other)
         : context_(other.context_),
@@ -22,6 +25,7 @@ namespace DynamiCL
           width_(other.width_),
           height_(other.height_),
           numLevels_(other.numLevels_),
+          pixelsPerPyramid(other.pixelsPerPyramid),
           pyramids_(std::move(other.pyramids_))
     {
 
@@ -34,6 +38,7 @@ namespace DynamiCL
         width_ = other.width_;
         height_ = other.height_;
         numLevels_ = other.numLevels_;
+        pixelsPerPyramid = other.pixelsPerPyramid;
         pyramids_ = std::move(other.pyramids_);
 
         return *this;
@@ -41,11 +46,18 @@ namespace DynamiCL
 
     void MergeGroup::addImage(view_type const& image)
     {
+        if (image.width() != width_ || image.height() != height_)
+        {
+            throw std::invalid_argument("Dimensions of image passed in differ to others in the sequence.");
+        }
+
+        //arenas_.emplace_back(pyramidSize);
+
         std::cout << "========================\n"
                      "Creating Pyramid.\n"
                      "========================"
                   << std::endl;
-        ImagePyramid pyramid(context_, image, numLevels_,
+        ImagePyramid pyramid(context_, image, numLevels_, halveDimension,
                 [=](Pending2DImage const& im)
                 {
                     return createPyramidLevel(im, program_);
@@ -54,7 +66,7 @@ namespace DynamiCL
         pyramids_.push_back(std::move(pyramid));
     }
 
-    MergeGroup::image_type MergeGroup::merge()
+    void MergeGroup::mergeInto(view_type& dest)
     {
         std::cout << "========================\n"
                      "Fusing Pyramids.\n"
@@ -75,7 +87,7 @@ namespace DynamiCL
                      "========================"
                   << std::endl;
 
-        image_type collapsed =
+        view_type collapsed =
             fused.collapse(
                 [&](ImagePyramid::LevelPair const& pair)
                 {
@@ -83,7 +95,7 @@ namespace DynamiCL
                 }
             );
 
-        return collapsed;
+        std::copy(collapsed.begin(), collapsed.end(), dest.begin());
     }
     
 } /* DynamiCL */ 

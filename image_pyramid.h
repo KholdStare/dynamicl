@@ -1,6 +1,7 @@
 #ifndef IMAGE_PYRAMID_H_ZSOHJD6F
 #define IMAGE_PYRAMID_H_ZSOHJD6F
 
+#include "utils.h"
 #include "cl_common.h"
 #include "pending_image.h"
 #include "host_image.hpp"
@@ -37,6 +38,12 @@ namespace DynamiCL
         };
 
         /**
+         * Given a length, produces new length
+         * in the next level of pyramid
+         */
+        typedef std::function< size_t(size_t) > HalvingFunc;
+
+        /**
          * Creates a new level
          */
         typedef std::function< LevelPair(Pending2DImage const&) > NextLevelFunc;
@@ -58,15 +65,25 @@ namespace DynamiCL
         ImagePyramid( ComputeContext const& context,
                       view_type const& startImage,
                       size_t numLevels,
+                      HalvingFunc halve,
                       NextLevelFunc);
+
+        ImagePyramid( ComputeContext const& context,
+                      std::vector<view_type>&& levelViews,
+                      NextLevelFunc const&,
+                      HalvingFunc const&);
 
         /**
          * Create a pyramid from the guts of another.
          */
-        ImagePyramid( ComputeContext const& context,
-                      std::vector<image_type>&& levels )
-            : context_(context),
-              levels_(std::move(levels))
+        ImagePyramid( array_ptr<pixel_type>&& data,
+                      ComputeContext const& context,
+                      std::vector<view_type>&& views,
+                      HalvingFunc const& halve)
+            : data_(std::move(data)),
+              context_(context),
+              views_(std::move(views)),
+              halve_(halve)
         { }
 
         // disable copying
@@ -74,20 +91,26 @@ namespace DynamiCL
         ImagePyramid& operator = ( ImagePyramid const& other ) = delete;
 
         ImagePyramid( ImagePyramid&& other )
-            : context_(other.context_),
-              levels_(std::move(other.levels_))
+            : data_(std::move(other.data_)),
+              context_(other.context_),
+              levels_(std::move(other.levels_)),
+              views_(std::move(other.views_)),
+              halve_(std::move(other.halve_))
         { }
 
         ImagePyramid& operator = ( ImagePyramid&& other )
         {
+            data_ = std::move(other.data_);
             levels_ = std::move(other.levels_);
+            views_ = std::move(other.views_);
+            halve_ = std::move(other.halve_);
             return *this;
         }
 
         /**
          * Return a vector of all the levels in this image pyramid
          */
-        std::vector<image_type> const& levels() const { return levels_; }
+        std::vector<view_type> const& levels() const { return views_; }
 
         /**
          * Move the vector of all the levels in this image pyramid out.
@@ -95,14 +118,15 @@ namespace DynamiCL
          * This leaves the pyramid empty. Use this if you want to modify the
          * individual images in the pyramid.
          */
-        std::vector<image_type> releaseLevels() { return std::move(levels_); }
+        //std::vector<view_type> releaseLevels() { return std::move(levels_); }
 
         /**
          * Returns collapsed image from image pyramid.
          *
+         * TODO: view is first subimage in arena. 
          * @note Pyramid is left empty (no levels), to save memory.
          */
-        image_type collapse(CollapseLevelFunc);
+        view_type collapse(CollapseLevelFunc);
 
         /**
          * Fuses passed-in pyramids into one.
@@ -112,9 +136,31 @@ namespace DynamiCL
          */
         static ImagePyramid fuse(std::vector<ImagePyramid>& pyramids, FuseLevelsFunc);
 
+
+        static std::vector<view_type>
+        createPyramidViews(size_t width,
+                size_t height,
+                size_t numLevels,
+                HalvingFunc const& halve,
+                pixel_type* array);
+
+        /**
+         * @Return total number of pixels required to store
+         * an image pyramid of numLevels
+         */
+        static size_t pyramidSize(size_t width,
+                size_t height,
+                size_t numLevels,
+                HalvingFunc const& halve);
+
     private:
+        array_ptr<pixel_type> data_; ///< optionally manages own data
         ComputeContext const& context_; ///< context for OpenCL operations
         std::vector<image_type> levels_;
+        std::vector<view_type> views_;
+        HalvingFunc halve_;
+
+        void initPyramid( NextLevelFunc const& createNext);
     };
 
 }

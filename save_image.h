@@ -7,9 +7,9 @@
 namespace DynamiCL
 {
     typedef HostImage<RGBA<float>, 2> FloatImage;
+    typedef HostImageView<RGBA<float>, 2> FloatImageView;
 
-    void saveTiff16(FloatImage const& in, std::string const& outPath);
-
+    void saveTiff16(FloatImageView const& in, std::string const& outPath);
 }
 
 #endif /* end of include guard: SAVE_IMAGE_H_RNXX0VQG */

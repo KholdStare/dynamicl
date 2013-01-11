@@ -7,8 +7,11 @@
 
 #include "cl_utils.h"
 #include "utils.h"
+#include "pyr_impl.h"
 
 using namespace DynamiCL;
+
+typedef boost::mpl::list<int,long,unsigned char> pix_types;
 
 BOOST_AUTO_TEST_SUITE(utils)
 
@@ -26,12 +29,28 @@ BOOST_AUTO_TEST_CASE( stripExtension_test )
     BOOST_CHECK_EQUAL( "hello.jpg", stripExtension("hello.jpg.bmp") );
 }
 
+BOOST_AUTO_TEST_CASE_TEMPLATE( array_ptr_tests, PixType, pix_types)
+{
+    typedef array_ptr<PixType> array_type;
+
+    array_type a(50);
+
+    BOOST_CHECK_EQUAL( a.size(), 50 );
+    BOOST_CHECK( a.ptr() != nullptr );
+
+    array_type b = std::move(a);
+
+    BOOST_CHECK_EQUAL( a.size(), 0 );
+    BOOST_CHECK( a.ptr() == nullptr );
+    BOOST_CHECK_EQUAL( b.size(), 50 );
+    BOOST_CHECK( b.ptr() != nullptr );
+
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 // ========================================================
 
 BOOST_AUTO_TEST_SUITE( host_image )
-
-typedef boost::mpl::list<int,long,unsigned char> pix_types;
 
 BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
 {
@@ -81,6 +100,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
     size_t depth = 50;
 
     typedef HostImage<PixType, 2> subimage_type;
+    typedef HostImageView<PixType, 2> view_type;
     std::vector< subimage_type > subimages;
 
     std::generate_n(std::back_inserter(subimages), depth,
@@ -116,8 +136,15 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
         inputIt += pitch;
     }
 
+    // produce views onto subimages
+    std::vector<view_type> views;
+    for (auto&& image : subimages)
+    {
+        views.push_back(image.view());
+    }
+
     // create array
-    HostImage<PixType, 3> imageArray(subimages);
+    HostImage<PixType, 3> imageArray(views);
 
     BOOST_CHECK_EQUAL( imageArray.valid(), true );
     BOOST_CHECK_EQUAL( imageArray.view().totalSize(), total );
@@ -164,3 +191,42 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+// ========================================================
+
+BOOST_AUTO_TEST_SUITE( pyramid_tests )
+
+BOOST_AUTO_TEST_CASE( pyramid_views )
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> d(0, 500);
+
+    typedef ImagePyramid::pixel_type pixel_type;
+
+    for (size_t example = 0; example < 10; ++example)
+    {
+        size_t width = d(gen);
+        size_t height = d(gen);
+        size_t numLevels = calculateNumLevels(width, height);
+
+        array_ptr<pixel_type> ar(pyramidSize(width, height, numLevels));
+
+        auto views =
+            ImagePyramid::createPyramidViews(width, height, numLevels, halveDimension, ar.ptr());
+
+        size_t totalBytes = std::accumulate(views.begin(), views.end(), 0,
+                [](size_t acc, ImagePyramid::view_type const& v)
+                {
+                    return acc + v.totalSize();
+                });
+
+        BOOST_CHECK_EQUAL( totalBytes, ar.size() );
+    }
+
+
+
+}
+
+
+BOOST_AUTO_TEST_SUITE_END()
+// ========================================================

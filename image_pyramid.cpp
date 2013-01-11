@@ -4,57 +4,107 @@
 #include <iostream>
 #include <sstream>
 
+
 namespace DynamiCL
 {
-    ImagePyramid::ImagePyramid( ComputeContext const& context,
-                      view_type const& startImage,
-                      size_t numLevels,
-                      NextLevelFunc createNext)
-        : context_(context)
+    void ImagePyramid::initPyramid( NextLevelFunc const& createNext )
     {
-        levels_.reserve(numLevels);
-
-        Pending2DImage image = makePendingImage<climage_type>(context, startImage);
+        Pending2DImage image = makePendingImage<climage_type>(context_, views_[0]);
 
         // create levels one at a time
-        for (size_t level = 1; level < numLevels; ++level)
+        for (size_t level = 1; level < views_.size(); ++level)
         {
             LevelPair pair = createNext(image);
 
-            levels_.push_back( std::move(makeHostImage<pixel_type>(pair.upper)) );
+            pair.upper.readInto(views_[level-1].rawData());
 
             image = std::move(pair.lower);
         }
 
-        // last level is byproduct of last creation
-        levels_.push_back( std::move(makeHostImage<pixel_type>(image)) );
+        image.readInto(views_.back().rawData()); // read last level
+
+        //for (size_t level = 0; level < views_.size(); ++level)
+        //{
+            //std::stringstream sstr;
+            //sstr << "pyramid_cons_test" << level << ".tiff";
+            ////saveTiff16(makeHostImage<RGBA<float>>(fused), sstr.str());
+            //saveTiff16(views_[level], sstr.str());
+        //}
     }
 
-    ImagePyramid::image_type ImagePyramid::collapse(CollapseLevelFunc collapseLevel)
+    ImagePyramid::ImagePyramid( ComputeContext const& context,
+                      view_type const& startImage,
+                      size_t numLevels,
+                      HalvingFunc halve,
+                      NextLevelFunc createNext)
+        : data_(pyramidSize(startImage.width(), startImage.height(), numLevels, halve)),
+          context_(context),
+          views_( createPyramidViews(startImage.width(),
+                                      startImage.height(),
+                                      numLevels,
+                                      halve,
+                                      data_.ptr())),
+          halve_(halve)
     {
-        std::vector<image_type> levels = this->releaseLevels();
+        std::copy(startImage.begin(), startImage.end(), views_.at(0).begin());
+
+        initPyramid(createNext);
+                                          
+        //levels_.reserve(numLevels);
+
+        //Pending2DImage image = makePendingImage<climage_type>(context, startImage);
+
+        //// create levels one at a time
+        //for (size_t level = 1; level < numLevels; ++level)
+        //{
+            //LevelPair pair = createNext(image);
+
+            //levels_.push_back( std::move(makeHostImage<pixel_type>(pair.upper)) );
+
+            //image = std::move(pair.lower);
+        //}
+
+        //// last level is byproduct of last creation
+        //levels_.push_back( std::move(makeHostImage<pixel_type>(image)) );
+    }
+
+    ImagePyramid::ImagePyramid( ComputeContext const& context,
+              std::vector<view_type>&& levelViews,
+              NextLevelFunc const& createNext,
+              HalvingFunc const& halve)
+        : context_(context),
+          views_(std::move(levelViews)),
+          halve_(halve)
+    {
+        initPyramid(createNext);
+    }
+
+    ImagePyramid::view_type ImagePyramid::collapse(CollapseLevelFunc collapseLevel)
+    {
+        //std::vector<image_type> levels = this->releaseLevels();
+        std::vector<view_type> levels = std::move(views_);
 
         // extracts next level
         auto nextLevel =
-            [&]() -> image_type
+            [&]() -> view_type
             {
                 if (levels.empty())
                 {
-                    return image_type();
+                    return view_type();
                 }
-                image_type i = std::move(levels.back());
+                view_type i = std::move(levels.back());
                 levels.pop_back();
                 return i;
             };
 
-        image_type lower = nextLevel();
-        Pending2DImage result = makePendingImage<climage_type>(context_, lower.view());
-        image_type upper = nextLevel();
+        auto lower = nextLevel();
+        Pending2DImage result = makePendingImage<climage_type>(context_, lower);
+        auto upper = nextLevel();
 
         // keep collapsing layers
         while(upper.valid())
         {
-            Pending2DImage u = makePendingImage<climage_type>(context_, upper.view());
+            Pending2DImage u = makePendingImage<climage_type>(context_, upper);
             // create pair to pass to the collapser
             LevelPair pair {std::move(u), std::move(result)};
 
@@ -66,7 +116,7 @@ namespace DynamiCL
             upper = nextLevel();
         }
 
-        result.readInto(lower.view().rawData());
+        result.readInto(lower.rawData());
         return lower;
     }
 
@@ -78,13 +128,18 @@ namespace DynamiCL
 
         ComputeContext const& context = pyramids.at(0).context_;
         size_t numLevels = pyramids[0].levels().size();
+        size_t numPixels = pyramids[0].data_.size();
+        size_t width = pyramids[0].levels()[0].width();
+        size_t height = pyramids[0].levels()[0].height();
+        HalvingFunc halve = pyramids[0].halve_;
 
         // TODO: make sure all pyramids have the same number of levels
         // and dimensions
 
         // outer vector: element is pyramid
         // inner vector: element is a level
-        std::vector<std::vector<image_type>> pyramidGuts;
+        //std::vector<std::vector<image_type>> pyramidGuts;
+        std::vector<std::vector<view_type>> pyramidGuts;
 
         // extract guts from pyramids
         for (ImagePyramid& pyramid : pyramids)
@@ -92,7 +147,7 @@ namespace DynamiCL
             // ensure all pyramids have the same number of levels
             assert( pyramid.levels().size() == numLevels );
 
-            pyramidGuts.push_back(pyramid.releaseLevels());
+            pyramidGuts.push_back(pyramid.levels());
         }
 
         std::cout << "Extracted Guts" << std::endl;
@@ -101,13 +156,13 @@ namespace DynamiCL
 
         // outer vector: represents collection of levels
         // inner vector: single level from all pyramids
-        std::vector<std::vector<image_type>> levelCollection(numLevels);
+        std::vector<std::vector<view_type>> levelCollection(numLevels);
 
         // rearrange so that each inner vector
         // has all images of a particular level from all pyramids
         for (size_t level = 0; level < numLevels; ++level)
         {
-            for (std::vector<image_type>& pyramid : pyramidGuts)
+            for (std::vector<view_type>& pyramid : pyramidGuts)
             {
                 levelCollection[level].push_back( std::move(pyramid.back()) );
                 pyramid.pop_back();
@@ -115,7 +170,7 @@ namespace DynamiCL
         }
 
         // pyramid guts should be empty
-        for (std::vector<image_type>& pyramid : pyramidGuts)
+        for (std::vector<view_type>& pyramid : pyramidGuts)
         {
             assert( pyramid.empty() );
         }
@@ -124,21 +179,22 @@ namespace DynamiCL
         // and increases from there
         if ( levelCollection.size() > 1 )
         {
-            assert( levelCollection[0][0].view().width() < levelCollection[1][0].view().width() );
+            assert( levelCollection[0][0].width() < levelCollection[1][0].width() );
         }
 
         std::cout << "Have to fuse " << levelCollection.size() << " levels" << std::endl;
 
         // ===================================================
         // now we can fuse each level individually
-        std::vector<image_type> fusedLevels;
+        array_ptr<pixel_type> fusedData(numPixels);
+        std::vector<view_type> fusedLevels =
+            ImagePyramid::createPyramidViews(width, height, numLevels, halve, fusedData.ptr());
 
         // fuse all levels
-        size_t l = 0;
-        while(!levelCollection.empty())
+        for (size_t level = 0; level < numLevels; ++level)
         {
-            // these image have to be fused
-            std::vector<image_type> singleLevel = std::move(levelCollection.back());
+            // these images have to be fused
+            std::vector<view_type> singleLevel = std::move(levelCollection.back());
             levelCollection.pop_back();
 
             // create contiguous image array in memory
@@ -149,9 +205,9 @@ namespace DynamiCL
                 makePendingImage<cl::Image2DArray>(context, levelArray.view());
 
             //std::stringstream sstr;
-            //sstr << "level_test" << l << ".tiff";
+            //sstr << "level_test" << level << ".tiff";
             ////saveTiff16(makeHostImage<RGBA<float>>(fused), sstr.str());
-            //saveTiff16(collapseDimension(std::move(levelArray)), sstr.str());
+            //saveTiff16(image_type(std::move(levelArray)).view(), sstr.str());
 
             auto dims = clarray.dimensions();
             std::cout << "Dimensions: "
@@ -161,13 +217,58 @@ namespace DynamiCL
 
             Pending2DImage fused = fuseLevels(clarray);
 
-            fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
-            ++l;
+            fused.readInto(fusedLevels[level].rawData());
+            //fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
         }
 
         std::cout << "Fused " << fusedLevels.size() << " levels" << std::endl;
 
-        return ImagePyramid(context, std::move(fusedLevels));
+        return ImagePyramid(std::move(fusedData), context, std::move(fusedLevels), halve);
+    }
+
+    std::vector<ImagePyramid::view_type> ImagePyramid::createPyramidViews(
+            size_t width,
+            size_t height,
+            size_t numLevels,
+            HalvingFunc const& halve,
+            pixel_type* array)
+    {
+
+        size_t levelWidth = width;
+        size_t levelHeight = height;
+
+        std::vector<view_type> views;
+
+        for (size_t level = numLevels; level > 0; --level)
+        {
+            views.push_back(view_type({{levelWidth, levelHeight}}, array));
+            array += levelWidth*levelHeight;
+            levelWidth = halve(levelWidth);
+            levelHeight = halve(levelHeight);
+        }
+
+        return views;
+    }
+
+    size_t ImagePyramid::pyramidSize(size_t width,
+                size_t height,
+                size_t numLevels,
+                HalvingFunc const& halve)
+    {
+
+        size_t levelWidth = width;
+        size_t levelHeight = height;
+
+        size_t numPixels = 0;
+        
+        for (size_t level = numLevels; level > 0; --level)
+        {
+            numPixels += levelWidth*levelHeight;
+            levelWidth = halve(levelWidth);
+            levelHeight = halve(levelHeight);
+        }
+
+        return numPixels;
     }
 
 } /* DynamiCL */ 

@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "utils.h"
 #include "cl_common.h"
 #include "image_pyramid.h"
 #include "host_image.hpp"
@@ -23,9 +24,10 @@ namespace DynamiCL
         size_t width_;      ///< width of images in merge
         size_t height_;     ///< height of images in merge
         size_t numLevels_;  ///< number of levels required to merge images
+        size_t pixelsPerPyramid; ///< number of pixels for all levels of one pyramid
         std::vector<ImagePyramid> pyramids_;
-        //std::vector<ImagePyramid> pyramids_;
-        // TODO: allocated arena goes here
+        // TODO: create single reusable arena
+        std::vector<array_ptr<pixel_type>> arenas_; ///< memory arenas for pyramid images
 
     public:
 
@@ -57,7 +59,7 @@ namespace DynamiCL
          *
          * This resets the images in this group.
          */
-        image_type merge();
+        void mergeInto(view_type &);
 
     };
     
