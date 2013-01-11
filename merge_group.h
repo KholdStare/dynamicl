@@ -10,28 +10,39 @@
 namespace DynamiCL
 {
 
-    class ImagePyramid;
-
     class MergeGroup
     {
+        typedef ImagePyramid pyramid_type;
+        typedef pyramid_type::pixel_type pixel_type;
+        typedef pyramid_type::image_type image_type;
+        typedef pyramid_type::view_type view_type;
+        typedef pyramid_type::climage_type climage_type;
+
         ComputeContext const& context_;
         cl::Program program_;
-        size_t numLevels_;
+        size_t width_;      ///< width of images in merge
+        size_t height_;     ///< height of images in merge
+        size_t numLevels_;  ///< number of levels required to merge images
         std::vector<ImagePyramid> pyramids_;
+        //std::vector<ImagePyramid> pyramids_;
         // TODO: allocated arena goes here
-        
-        typedef RGBA<float> pixel_type;
-        typedef HostImage<pixel_type, 2> image_type;
-        typedef HostImageView<pixel_type, 2> view_type;
-        typedef cl::Image2D climage_type;
 
     public:
 
         MergeGroup(ComputeContext const& context,
-                cl::Program const& program);
+                cl::Program const& program,
+                size_t width,
+                size_t height);
                 //size_t numLevels);
 
-        //ImagePyramid& addImage(view_type const& image);
+        // move constructor
+        MergeGroup(MergeGroup&& other);
+        MergeGroup& operator = (MergeGroup&& other);
+
+        // disable copy operations
+        MergeGroup(MergeGroup const&) = delete;
+        MergeGroup& operator = (MergeGroup const&) = delete;
+
         void addImage(view_type const& image);
 
         /**
@@ -42,7 +53,9 @@ namespace DynamiCL
         bool empty() const { return numImages() == 0; }
 
         /**
-         * Merge the images in this group into an HDR image
+         * Merge the images in this group into an HDR image.
+         *
+         * This resets the images in this group.
          */
         image_type merge();
 

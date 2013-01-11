@@ -1,8 +1,8 @@
 #include "image_pyramid.h"
+#include "cl_utils.h"
 #include "save_image.h"
 #include <iostream>
 #include <sstream>
-
 
 namespace DynamiCL
 {

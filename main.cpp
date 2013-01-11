@@ -106,16 +106,19 @@ namespace DynamiCL
 
             size_t width = 1;
             size_t height = 1;
-            MergeGroup group(context, program);
+            // TODO replace with move-aware optional
+            std::unique_ptr<MergeGroup> group;
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
 
-                // determine pyramid depth if this is a first image in sequence
-                if (group.empty())
+                // determine pyramid depth if this is a first image received
+                if (!group)
                 {
                     width = in->view().width();
                     height = in->view().height();
+
+                    group.reset(new MergeGroup(context, program, width, height));
                 }
                 // if subsequent images in sequence, check that sizes match
                 else if (width != in->view().width() || height != in->view().height()) {
@@ -130,12 +133,12 @@ namespace DynamiCL
                 processImageInPlace(in->view(), quality, context);
 
                 // add image to group
-                group.addImage(in->view());
+                group->addImage(in->view());
 
                 // as soon as we can merge, do so
-                if (group.numImages() == 3)
+                if (group->numImages() == 3)
                 {
-                    FloatImage collapsed = group.merge();
+                    FloatImage collapsed = group->merge();
 
                     std::cout << "========================\n"
                                  "HDR Merge complete.\n"

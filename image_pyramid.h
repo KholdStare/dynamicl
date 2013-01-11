@@ -1,7 +1,9 @@
 #ifndef IMAGE_PYRAMID_H_ZSOHJD6F
 #define IMAGE_PYRAMID_H_ZSOHJD6F
 
-#include "cl_utils.h"
+#include "cl_common.h"
+#include "pending_image.h"
+#include "host_image.hpp"
 
 namespace DynamiCL
 {

@@ -1,27 +1,46 @@
 #include "merge_group.h"
-#include "image_pyramid.h"
 #include "pyr_impl.h"
 
 namespace DynamiCL
 {
 
     MergeGroup::MergeGroup(ComputeContext const& context,
-                cl::Program const& program)
+                cl::Program const& program,
+                size_t width,
+                size_t height)
                 //size_t numLevels)
         : context_(context),
           program_(program),
-          numLevels_(0)
-          //numLevels_(numLevels)
+          width_(width),
+          height_(height),
+          numLevels_(calculateNumLevels(width, height))
     { }
 
-    //ImagePyramid& MergeGroup::addImage(view_type const& image)
+    MergeGroup::MergeGroup(MergeGroup&& other)
+        : context_(other.context_),
+          program_(other.program_),
+          width_(other.width_),
+          height_(other.height_),
+          numLevels_(other.numLevels_),
+          pyramids_(std::move(other.pyramids_))
+    {
+
+    }
+
+    MergeGroup& MergeGroup::operator = (MergeGroup&& other)
+    {
+        //context_ = other.context_;
+        program_ = other.program_;
+        width_ = other.width_;
+        height_ = other.height_;
+        numLevels_ = other.numLevels_;
+        pyramids_ = std::move(other.pyramids_);
+
+        return *this;
+    }
+
     void MergeGroup::addImage(view_type const& image)
     {
-        if (!numLevels_)
-        {
-            numLevels_ = calculateNumLevels(image.width(), image.height());
-        }
-
         std::cout << "========================\n"
                      "Creating Pyramid.\n"
                      "========================"
@@ -33,15 +52,14 @@ namespace DynamiCL
                 });
 
         pyramids_.push_back(std::move(pyramid));
-        //return pyramids_.back();
     }
 
     MergeGroup::image_type MergeGroup::merge()
     {
         std::cout << "========================\n"
-            "Fusing Pyramids.\n"
-            "========================"
-            << std::endl;
+                     "Fusing Pyramids.\n"
+                     "========================"
+                  << std::endl;
 
         ImagePyramid fused =
             ImagePyramid::fuse(pyramids_,
@@ -53,9 +71,9 @@ namespace DynamiCL
         pyramids_.clear();
 
         std::cout << "========================\n"
-            "Collapsing Pyramid.\n"
-            "========================"
-            << std::endl;
+                     "Collapsing Pyramid.\n"
+                     "========================"
+                  << std::endl;
 
         image_type collapsed =
             fused.collapse(
@@ -65,7 +83,6 @@ namespace DynamiCL
                 }
             );
 
-        numLevels_ = 0; // reset numlevels, to re-detect it later TODO: ewww
         return collapsed;
     }
     
