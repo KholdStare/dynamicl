@@ -32,40 +32,24 @@ namespace DynamiCL
         //}
     }
 
-    ImagePyramid::ImagePyramid( ComputeContext const& context,
-                      view_type const& startImage,
-                      size_t numLevels,
-                      HalvingFunc const& halve,
-                      NextLevelFunc const& createNext)
-        : data_(pyramidSize(startImage.width(), startImage.height(), numLevels, halve)),
-          context_(context),
-          views_( createPyramidViews(startImage.width(),
-                                      startImage.height(),
-                                      numLevels,
-                                      halve,
-                                      data_.ptr()))
-    {
-        std::copy(startImage.begin(), startImage.end(), views_.at(0).begin());
+    //ImagePyramid::ImagePyramid( ComputeContext const& context,
+                      //view_type const& startImage,
+                      //size_t numLevels,
+                      //HalvingFunc const& halve,
+                      //NextLevelFunc const& createNext)
+        //: data_(pyramidSize(startImage.width(), startImage.height(), numLevels, halve)),
+          //context_(context),
+          //views_( createPyramidViews(startImage.width(),
+                                      //startImage.height(),
+                                      //numLevels,
+                                      //halve,
+                                      //data_.ptr()))
+    //{
+        //std::copy(startImage.begin(), startImage.end(), views_.at(0).begin());
 
-        initPyramid(createNext);
+        //initPyramid(createNext);
                                           
-        //levels_.reserve(numLevels);
-
-        //Pending2DImage image = makePendingImage<climage_type>(context, startImage);
-
-        //// create levels one at a time
-        //for (size_t level = 1; level < numLevels; ++level)
-        //{
-            //LevelPair pair = createNext(image);
-
-            //levels_.push_back( std::move(makeHostImage<pixel_type>(pair.upper)) );
-
-            //image = std::move(pair.lower);
-        //}
-
-        //// last level is byproduct of last creation
-        //levels_.push_back( std::move(makeHostImage<pixel_type>(image)) );
-    }
+    //}
 
     ImagePyramid::ImagePyramid( ComputeContext const& context,
               std::vector<view_type>&& levelViews,

@@ -62,11 +62,11 @@ namespace DynamiCL
          * Construct an image puramid with @a numLevels levels,
          * from the @a startImage, using a specified NextLevelFunc
          */
-        ImagePyramid( ComputeContext const& context,
-                      view_type const& startImage,
-                      size_t numLevels,
-                      HalvingFunc const&,
-                      NextLevelFunc const&);
+        //ImagePyramid( ComputeContext const& context,
+                      //view_type const& startImage,
+                      //size_t numLevels,
+                      //HalvingFunc const&,
+                      //NextLevelFunc const&);
 
         ImagePyramid( ComputeContext const& context,
                       std::vector<view_type>&& levelViews,

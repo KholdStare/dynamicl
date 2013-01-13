@@ -18,6 +18,7 @@ namespace DynamiCL
         typedef pyramid_type::image_type image_type;
         typedef pyramid_type::view_type view_type;
         typedef pyramid_type::climage_type climage_type;
+        typedef HostImageView<pixel_type, 3> fuse_view_type;
 
         ComputeContext const& context_;
         cl::Program program_;
@@ -26,9 +27,16 @@ namespace DynamiCL
         size_t const numLevels_;  ///< number of levels required to merge images
         size_t const pixelsPerPyramid_; ///< number of pixels for all levels of one pyramid
         size_t const groupSize_;
-        std::vector<ImagePyramid> pyramids_;
         // TODO: create single reusable arena
         array_ptr<pixel_type> arena_; ///< memory arena for pyramid images
+
+        /**
+         * Contiguous views of memory that represent an array of
+         * images forming a single level of several pyramids to be fused.
+         */
+        std::vector<fuse_view_type> fuseViews_;
+        std::vector<ImagePyramid> pyramids_;
+
 
     public:
 
@@ -44,6 +52,8 @@ namespace DynamiCL
 
         // move constructor
         MergeGroup(MergeGroup&& other);
+
+        // no move assignment because of const members
         MergeGroup& operator = (MergeGroup&& other) = delete;
 
         // disable copy operations

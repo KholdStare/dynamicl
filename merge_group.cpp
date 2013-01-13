@@ -15,9 +15,27 @@ namespace DynamiCL
           height_(height),
           numLevels_(calculateNumLevels(width, height)),
           pixelsPerPyramid_(pyramidSize(width, height, numLevels_)),
-          groupSize_(groupSize)
+          groupSize_(groupSize),
+          arena_(pixelsPerPyramid_ * groupSize_) // total pixel count of all pyramids for merge
     { 
-        // calculate space needed for merging
+        // Have to create views into memory arena that will be used by
+        // the image pyramids
+        size_t levelWidth = width_;
+        size_t levelHeight = height_;
+        pixel_type* dataptr = arena_.ptr();
+
+        // create views level by level
+        for (size_t level = 0; level < numLevels_; ++level)
+        {
+            fuseViews_.emplace_back(std::array<size_t, 3>{{levelWidth, levelHeight, groupSize_}},
+                                    dataptr);
+
+            // move the data ptr forward in the arena
+            dataptr += fuseViews_.back().totalSize();
+            // halve the dimensions for the next level
+            levelWidth = halveDimension(levelWidth);
+            levelHeight = halveDimension(levelHeight);
+        }
     }
 
     MergeGroup::MergeGroup(MergeGroup&& other)
@@ -28,9 +46,11 @@ namespace DynamiCL
           numLevels_(other.numLevels_),
           pixelsPerPyramid_(other.pixelsPerPyramid_),
           groupSize_(other.groupSize_),
+          arena_(std::move(other.arena_)),
+          fuseViews_(std::move(other.fuseViews_)),
           pyramids_(std::move(other.pyramids_))
     {
-
+        // TODO: invalidate other
     }
 
 
@@ -41,13 +61,29 @@ namespace DynamiCL
             throw std::invalid_argument("Dimensions of image passed in differ to others in the sequence.");
         }
 
-        //arenas_.emplace_back(pyramidSize);
+        if (pyramids_.size() == groupSize_)
+        {
+            throw std::invalid_argument("Group already contains enough images to fuse. Cannot add another.");
+        }
+
+        // which image in the group is this
+        size_t imageNum = pyramids_.size();
+
+        // create subviews from arena for a single pyramid
+        std::vector< view_type > subviews;
+        for (auto& fuseView : fuseViews_)
+        {
+            subviews.push_back(fuseView[imageNum]);
+        }
+
+        // transfer input image into first level of pyramid
+        std::copy(image.begin(), image.end(), subviews.front().begin());
 
         std::cout << "========================\n"
                      "Creating Pyramid.\n"
                      "========================"
                   << std::endl;
-        ImagePyramid pyramid(context_, image, numLevels_, halveDimension,
+        ImagePyramid pyramid(context_, std::move(subviews),
                 [=](Pending2DImage const& im)
                 {
                     return createPyramidLevel(im, program_);
