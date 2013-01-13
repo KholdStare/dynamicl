@@ -21,25 +21,30 @@ namespace DynamiCL
 
         ComputeContext const& context_;
         cl::Program program_;
-        size_t width_;      ///< width of images in merge
-        size_t height_;     ///< height of images in merge
-        size_t numLevels_;  ///< number of levels required to merge images
-        size_t pixelsPerPyramid; ///< number of pixels for all levels of one pyramid
+        size_t const width_;      ///< width of images in merge
+        size_t const height_;     ///< height of images in merge
+        size_t const numLevels_;  ///< number of levels required to merge images
+        size_t const pixelsPerPyramid_; ///< number of pixels for all levels of one pyramid
+        size_t const groupSize_;
         std::vector<ImagePyramid> pyramids_;
         // TODO: create single reusable arena
-        std::vector<array_ptr<pixel_type>> arenas_; ///< memory arenas for pyramid images
+        array_ptr<pixel_type> arena_; ///< memory arena for pyramid images
 
     public:
 
+        /**
+         * Create a new image group for HDR merging,
+         * of specified dimensiobality
+         */
         MergeGroup(ComputeContext const& context,
                 cl::Program const& program,
                 size_t width,
-                size_t height);
-                //size_t numLevels);
+                size_t height,
+                size_t groupSize);
 
         // move constructor
         MergeGroup(MergeGroup&& other);
-        MergeGroup& operator = (MergeGroup&& other);
+        MergeGroup& operator = (MergeGroup&& other) = delete;
 
         // disable copy operations
         MergeGroup(MergeGroup const&) = delete;

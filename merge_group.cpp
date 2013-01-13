@@ -7,14 +7,15 @@ namespace DynamiCL
     MergeGroup::MergeGroup(ComputeContext const& context,
                 cl::Program const& program,
                 size_t width,
-                size_t height)
-                //size_t numLevels)
+                size_t height,
+                size_t groupSize)
         : context_(context),
           program_(program),
           width_(width),
           height_(height),
           numLevels_(calculateNumLevels(width, height)),
-          pixelsPerPyramid(pyramidSize(width, height, numLevels_))
+          pixelsPerPyramid_(pyramidSize(width, height, numLevels_)),
+          groupSize_(groupSize)
     { 
         // calculate space needed for merging
     }
@@ -25,24 +26,25 @@ namespace DynamiCL
           width_(other.width_),
           height_(other.height_),
           numLevels_(other.numLevels_),
-          pixelsPerPyramid(other.pixelsPerPyramid),
+          pixelsPerPyramid_(other.pixelsPerPyramid_),
+          groupSize_(other.groupSize_),
           pyramids_(std::move(other.pyramids_))
     {
 
     }
 
-    MergeGroup& MergeGroup::operator = (MergeGroup&& other)
-    {
-        //context_ = other.context_;
-        program_ = other.program_;
-        width_ = other.width_;
-        height_ = other.height_;
-        numLevels_ = other.numLevels_;
-        pixelsPerPyramid = other.pixelsPerPyramid;
-        pyramids_ = std::move(other.pyramids_);
+    //MergeGroup& MergeGroup::operator = (MergeGroup&& other)
+    //{
+        ////context_ = other.context_;
+        //program_ = other.program_;
+        //width_ = other.width_;
+        //height_ = other.height_;
+        //numLevels_ = other.numLevels_;
+        //pixelsPerPyramid_ = other.pixelsPerPyramid_;
+        //pyramids_ = std::move(other.pyramids_);
 
-        return *this;
-    }
+        //return *this;
+    //}
 
     void MergeGroup::addImage(view_type const& image)
     {
@@ -87,15 +89,13 @@ namespace DynamiCL
                      "========================"
                   << std::endl;
 
-        view_type collapsed =
-            fused.collapse(
+        fused.collapseInto(
                 [&](ImagePyramid::LevelPair const& pair)
                 {
                     return collapsePyramidLevel(pair, program_);
-                }
+                },
+                dest
             );
-
-        std::copy(collapsed.begin(), collapsed.end(), dest.begin());
     }
     
 } /* DynamiCL */ 

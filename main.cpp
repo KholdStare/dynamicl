@@ -118,7 +118,7 @@ namespace DynamiCL
                     width = in->view().width();
                     height = in->view().height();
 
-                    group.reset(new MergeGroup(context, program, width, height));
+                    group.reset(new MergeGroup(context, program, width, height, 3));
                 }
                 // if subsequent images in sequence, check that sizes match
                 else if (width != in->view().width() || height != in->view().height()) {

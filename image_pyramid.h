@@ -93,7 +93,6 @@ namespace DynamiCL
         ImagePyramid( ImagePyramid&& other )
             : data_(std::move(other.data_)),
               context_(other.context_),
-              levels_(std::move(other.levels_)),
               views_(std::move(other.views_)),
               halve_(std::move(other.halve_))
         { }
@@ -101,7 +100,6 @@ namespace DynamiCL
         ImagePyramid& operator = ( ImagePyramid&& other )
         {
             data_ = std::move(other.data_);
-            levels_ = std::move(other.levels_);
             views_ = std::move(other.views_);
             halve_ = std::move(other.halve_);
             return *this;
@@ -126,7 +124,7 @@ namespace DynamiCL
          * TODO: view is first subimage in arena. 
          * @note Pyramid is left empty (no levels), to save memory.
          */
-        view_type collapse(CollapseLevelFunc);
+        void collapseInto(CollapseLevelFunc, view_type&);
 
         /**
          * Fuses passed-in pyramids into one.
@@ -156,7 +154,6 @@ namespace DynamiCL
     private:
         array_ptr<pixel_type> data_; ///< optionally manages own data
         ComputeContext const& context_; ///< context for OpenCL operations
-        std::vector<image_type> levels_;
         std::vector<view_type> views_;
         HalvingFunc halve_;
 

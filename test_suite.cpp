@@ -222,9 +222,6 @@ BOOST_AUTO_TEST_CASE( pyramid_views )
 
         BOOST_CHECK_EQUAL( totalBytes, ar.size() );
     }
-
-
-
 }
 
 

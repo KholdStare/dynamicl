@@ -79,7 +79,8 @@ namespace DynamiCL
         initPyramid(createNext);
     }
 
-    ImagePyramid::view_type ImagePyramid::collapse(CollapseLevelFunc collapseLevel)
+    void ImagePyramid::collapseInto(CollapseLevelFunc collapseLevel,
+            view_type& dest)
     {
         //std::vector<image_type> levels = this->releaseLevels();
         std::vector<view_type> levels = std::move(views_);
@@ -116,8 +117,7 @@ namespace DynamiCL
             upper = nextLevel();
         }
 
-        result.readInto(lower.rawData());
-        return lower;
+        result.readInto(dest.rawData());
     }
 
     ImagePyramid ImagePyramid::fuse(std::vector<ImagePyramid>& pyramids,
