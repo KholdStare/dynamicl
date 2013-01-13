@@ -35,16 +35,15 @@ namespace DynamiCL
     ImagePyramid::ImagePyramid( ComputeContext const& context,
                       view_type const& startImage,
                       size_t numLevels,
-                      HalvingFunc halve,
-                      NextLevelFunc createNext)
+                      HalvingFunc const& halve,
+                      NextLevelFunc const& createNext)
         : data_(pyramidSize(startImage.width(), startImage.height(), numLevels, halve)),
           context_(context),
           views_( createPyramidViews(startImage.width(),
                                       startImage.height(),
                                       numLevels,
                                       halve,
-                                      data_.ptr())),
-          halve_(halve)
+                                      data_.ptr()))
     {
         std::copy(startImage.begin(), startImage.end(), views_.at(0).begin());
 
@@ -70,11 +69,9 @@ namespace DynamiCL
 
     ImagePyramid::ImagePyramid( ComputeContext const& context,
               std::vector<view_type>&& levelViews,
-              NextLevelFunc const& createNext,
-              HalvingFunc const& halve)
+              NextLevelFunc const& createNext)
         : context_(context),
-          views_(std::move(levelViews)),
-          halve_(halve)
+          views_(std::move(levelViews))
     {
         initPyramid(createNext);
     }
@@ -128,10 +125,6 @@ namespace DynamiCL
 
         ComputeContext const& context = pyramids.at(0).context_;
         size_t numLevels = pyramids[0].levels().size();
-        size_t numPixels = pyramids[0].data_.size();
-        size_t width = pyramids[0].levels()[0].width();
-        size_t height = pyramids[0].levels()[0].height();
-        HalvingFunc halve = pyramids[0].halve_;
 
         // TODO: make sure all pyramids have the same number of levels
         // and dimensions
@@ -186,9 +179,8 @@ namespace DynamiCL
 
         // ===================================================
         // now we can fuse each level individually
-        array_ptr<pixel_type> fusedData(numPixels);
-        std::vector<view_type> fusedLevels =
-            ImagePyramid::createPyramidViews(width, height, numLevels, halve, fusedData.ptr());
+        // reuse space of first input pyramid for the result
+        ImagePyramid fusedPyramid = std::move(pyramids[0]);
 
         // fuse all levels
         for (size_t level = 0; level < numLevels; ++level)
@@ -217,13 +209,13 @@ namespace DynamiCL
 
             Pending2DImage fused = fuseLevels(clarray);
 
-            fused.readInto(fusedLevels[level].rawData());
+            fused.readInto(fusedPyramid.views_[level].rawData());
             //fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
         }
 
-        std::cout << "Fused " << fusedLevels.size() << " levels" << std::endl;
+        std::cout << "Fused " << numLevels << " levels" << std::endl;
 
-        return ImagePyramid(std::move(fusedData), context, std::move(fusedLevels), halve);
+        return fusedPyramid;
     }
 
     std::vector<ImagePyramid::view_type> ImagePyramid::createPyramidViews(

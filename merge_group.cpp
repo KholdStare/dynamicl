@@ -33,18 +33,6 @@ namespace DynamiCL
 
     }
 
-    //MergeGroup& MergeGroup::operator = (MergeGroup&& other)
-    //{
-        ////context_ = other.context_;
-        //program_ = other.program_;
-        //width_ = other.width_;
-        //height_ = other.height_;
-        //numLevels_ = other.numLevels_;
-        //pixelsPerPyramid_ = other.pixelsPerPyramid_;
-        //pyramids_ = std::move(other.pyramids_);
-
-        //return *this;
-    //}
 
     void MergeGroup::addImage(view_type const& image)
     {

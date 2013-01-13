@@ -65,25 +65,22 @@ namespace DynamiCL
         ImagePyramid( ComputeContext const& context,
                       view_type const& startImage,
                       size_t numLevels,
-                      HalvingFunc halve,
-                      NextLevelFunc);
+                      HalvingFunc const&,
+                      NextLevelFunc const&);
 
         ImagePyramid( ComputeContext const& context,
                       std::vector<view_type>&& levelViews,
-                      NextLevelFunc const&,
-                      HalvingFunc const&);
+                      NextLevelFunc const&);
 
         /**
          * Create a pyramid from the guts of another.
          */
         ImagePyramid( array_ptr<pixel_type>&& data,
                       ComputeContext const& context,
-                      std::vector<view_type>&& views,
-                      HalvingFunc const& halve)
+                      std::vector<view_type>&& views)
             : data_(std::move(data)),
               context_(context),
-              views_(std::move(views)),
-              halve_(halve)
+              views_(std::move(views))
         { }
 
         // disable copying
@@ -93,15 +90,13 @@ namespace DynamiCL
         ImagePyramid( ImagePyramid&& other )
             : data_(std::move(other.data_)),
               context_(other.context_),
-              views_(std::move(other.views_)),
-              halve_(std::move(other.halve_))
+              views_(std::move(other.views_))
         { }
 
         ImagePyramid& operator = ( ImagePyramid&& other )
         {
             data_ = std::move(other.data_);
             views_ = std::move(other.views_);
-            halve_ = std::move(other.halve_);
             return *this;
         }
 
@@ -109,14 +104,6 @@ namespace DynamiCL
          * Return a vector of all the levels in this image pyramid
          */
         std::vector<view_type> const& levels() const { return views_; }
-
-        /**
-         * Move the vector of all the levels in this image pyramid out.
-         *
-         * This leaves the pyramid empty. Use this if you want to modify the
-         * individual images in the pyramid.
-         */
-        //std::vector<view_type> releaseLevels() { return std::move(levels_); }
 
         /**
          * Returns collapsed image from image pyramid.
@@ -155,7 +142,6 @@ namespace DynamiCL
         array_ptr<pixel_type> data_; ///< optionally manages own data
         ComputeContext const& context_; ///< context for OpenCL operations
         std::vector<view_type> views_;
-        HalvingFunc halve_;
 
         void initPyramid( NextLevelFunc const& createNext);
     };
