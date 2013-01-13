@@ -66,6 +66,8 @@ namespace DynamiCL
             throw std::invalid_argument("Group already contains enough images to fuse. Cannot add another.");
         }
 
+        // TODO: do quality mask here, then create pyramid from Pending image
+
         // which image in the group is this
         size_t imageNum = pyramids_.size();
 
@@ -99,14 +101,17 @@ namespace DynamiCL
                      "========================"
                   << std::endl;
 
-        ImagePyramid fused =
-            ImagePyramid::fuse(pyramids_,
-                [&](Pending2DImageArray const& im)
-                {
-                    return fusePyramidLevel(im, program_);
-                }
-            );
-        pyramids_.clear();
+        // "borrow" first pyramid for destination
+        ImagePyramid fused( std::move(pyramids_[0]) );
+
+        ImagePyramid::fuseInto(context_, fuseViews_,
+            [&](Pending2DImageArray const& im)
+            {
+                return fusePyramidLevel(im, program_);
+            },
+            // TODO: get rid of hack
+            const_cast<std::vector<view_type>&>(fused.levels())
+        );
 
         std::cout << "========================\n"
                      "Collapsing Pyramid.\n"
@@ -120,6 +125,7 @@ namespace DynamiCL
                 },
                 dest
             );
+        pyramids_.clear();
     }
     
 } /* DynamiCL */ 

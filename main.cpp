@@ -126,6 +126,7 @@ namespace DynamiCL
                 }
                 
                 // create quality mask in image
+                // TODO: move this into merge group
                 std::cout << "========================\n"
                              "Creating Quality Mask.\n"
                              "========================"

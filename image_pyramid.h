@@ -26,6 +26,7 @@ namespace DynamiCL
         typedef RGBA<float> pixel_type;
         typedef HostImage<pixel_type, 2> image_type;
         typedef HostImageView<pixel_type, 2> view_type;
+        typedef HostImageView<pixel_type, 3> fuse_view_type;
         typedef cl::Image2D climage_type;
 
         /**
@@ -121,6 +122,10 @@ namespace DynamiCL
          */
         static ImagePyramid fuse(std::vector<ImagePyramid>& pyramids, FuseLevelsFunc);
 
+        static void fuseInto(ComputeContext const& context,
+                         std::vector<fuse_view_type>& fuseViews,
+                         FuseLevelsFunc const&,
+                         std::vector<view_type>& dest);
 
         static std::vector<view_type>
         createPyramidViews(size_t width,

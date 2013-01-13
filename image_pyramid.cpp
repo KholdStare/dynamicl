@@ -202,6 +202,40 @@ namespace DynamiCL
         return fusedPyramid;
     }
 
+    void ImagePyramid::fuseInto(ComputeContext const& context,
+                     std::vector<fuse_view_type>& fuseViews,
+                     FuseLevelsFunc const& fuseLevel, 
+                     std::vector<view_type>& dest)
+    {
+        size_t numLevels = fuseViews.size();
+        // fuse all levels
+        //for (auto& fuseView : fuseViews)
+        for (size_t level = 0; level < numLevels; ++level)
+        {
+            // create a pending image array from fuse view
+            Pending2DImageArray clarray =
+                makePendingImage<cl::Image2DArray>(context, fuseViews[level]);
+
+            //std::stringstream sstr;
+            //sstr << "level_test" << level << ".tiff";
+            ////saveTiff16(makeHostImage<RGBA<float>>(fused), sstr.str());
+            //saveTiff16(image_type(std::move(levelArray)).view(), sstr.str());
+
+            auto dims = clarray.dimensions();
+            std::cout << "Dimensions: "
+                      << dims[0] << " x "
+                      << dims[1] << " x "
+                      << dims[2] << std::endl;
+
+            Pending2DImage fused = fuseLevel(clarray);
+
+            fused.readInto(dest[level].rawData());
+            //fusedLevels.push_back(makeHostImage<RGBA<float>>(fused));
+        }
+
+        std::cout << "Fused " << numLevels << " levels" << std::endl;
+    }
+
     std::vector<ImagePyramid::view_type> ImagePyramid::createPyramidViews(
             size_t width,
             size_t height,
