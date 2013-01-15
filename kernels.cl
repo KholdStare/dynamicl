@@ -222,7 +222,7 @@ __kernel void upsample_row(__read_only image2d_t input_image, __write_only image
 /**
  * Return the standard deviation squared, of R, G, B component values in a pixel
  */
-float sigma_squared_rgb(float4 pixel)
+inline float sigma_squared_rgb(float4 pixel)
 {
     float4 squared = pown(pixel, 2);
     float mean = ((float)pixel.s0 + pixel.s1 + pixel.s2) / 3.0f;
@@ -235,13 +235,23 @@ float sigma_squared_rgb(float4 pixel)
     return sqrt(fabs(mean_of_squared - mean_squared));
 }
 
-float well_exposedness(float4 pixel)
+inline float well_exposedness(float4 pixel)
+{
+    // 1961 paper "Acosine approximation to the normal distribution"
+    // by D. H. Raab and E. H. Green, Psychometrika, Volume 26, pages 447-450
+    float4 component_wise = 0.5f + cospi( 1.75f * (pixel - 0.5f) );
+
+    // create single measure for pixel
+    return component_wise.s0 + component_wise.s1 + component_wise.s2;
+}
+
+// uses gaussian distribution
+inline float well_exposedness_naive(float4 pixel)
 {
     float const denominator = 0.08f; // sigma^2 * 2, where sigma = 0.2
     float4 component_wise = exp( (float4) - (pown( pixel - 0.5f, 2 ) / denominator) );
 
     // create single measure for pixel
-    /*return component_wise.s0 * component_wise.s1 * component_wise.s2;*/
     return component_wise.s0 + component_wise.s1 + component_wise.s2;
 }
 
@@ -252,7 +262,7 @@ __constant const float discreet_laplacian[3][3] = {
     0.5f/6.f, 1.f/6.f, 0.5f/6.f
 };
 
-__kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
+__kernel void compute_quality_laplacian(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
 
@@ -274,14 +284,46 @@ __kernel void compute_quality(__read_only image2d_t input_image, __write_only im
 
     float4 pixel = read_imagef (input_image, g_sampler, coord);
 
-    float sigma = sigma_squared_rgb(pixel);
+    //float sigma = sigma_squared_rgb(pixel);
+    //float exposedness = well_exposedness(pixel);
+
+    // assign quality measure to alpha channel
+    // TODO multiples are ad hoc. do better
+    pixel.s3 = ( laplacian_measure * 3.0f );
+    //         + ( sigma * 1.5f )
+    //         + ( exposedness * 0.2f );
+
+    write_imagef (output_image, coord, pixel);
+}
+
+__kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
+{
+    int2 coord = (int2)( get_global_id(0), get_global_id(1) );
+    float4 pixel = read_imagef (input_image, g_sampler, coord);
+
+    //float sigma = sigma_squared_rgb(pixel);
     float exposedness = well_exposedness(pixel);
 
     // assign quality measure to alpha channel
     // TODO multiples are ad hoc. do better
-    pixel.s3 = ( laplacian_measure * 3.0f )
-             + ( sigma * 1.5f )
-             + ( exposedness * 0.2f );
+    pixel.s3 = well_exposedness(pixel) * 0.2f;
+    //         + ( sigma * 1.5f )
+    //         + ( exposedness * 0.2f );
+
+    write_imagef (output_image, coord, pixel);
+}
+
+__kernel void compute_quality_sigma(__read_only image2d_t input_image, __write_only image2d_t output_image)
+{
+    int2 coord = (int2)( get_global_id(0), get_global_id(1) );
+    float4 pixel = read_imagef (input_image, g_sampler, coord);
+
+    float sigma = sigma_squared_rgb(pixel);
+
+    // assign quality measure to alpha channel
+    // TODO multiples are ad hoc. do better
+    pixel.s3 +=( sigma * 1.5f );
+    //         + ( exposedness * 0.2f );
 
     write_imagef (output_image, coord, pixel);
 }
