@@ -291,8 +291,9 @@ namespace DynamiCL
         }
 
         /**
-         * Compile time iteration to initialize std::array
-         * has to be done at compile-time since image could have any dimension,
+         * Compile time iteration to initialize std::array.
+         *
+         * Has to be done at compile-time since image could have any dimension,
          * and compilation fails if we ask for an inexising dimension from it.
          * E.g. Depth from an Image1D
          */

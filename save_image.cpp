@@ -41,7 +41,7 @@ namespace DynamiCL
         vigra::ImageExportInfo exportInfo(outPath.c_str());
         exportInfo.setFileType("TIFF");
         exportInfo.setPixelType("UINT16");
-        //exportInfo.setCompression("LZW"); // TODO: major bottleneck
+        exportInfo.setCompression("LZW"); // TODO: major bottleneck
 
         OutImgType out(in.width(), in.height());
 

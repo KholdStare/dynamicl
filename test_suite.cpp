@@ -13,6 +13,21 @@ using namespace DynamiCL;
 
 typedef boost::mpl::list<int,long,unsigned char> pix_types;
 
+// ========================================================
+// TODO: uggggh have to handle manually
+struct CLFixture {
+    ComputeContext clcontext;
+    cl::Program testkernels;
+
+    CLFixture()  
+        : clcontext(),
+          testkernels(buildProgram(clcontext.context, clcontext.device, "tests.cl"))
+    {}
+};
+
+BOOST_GLOBAL_FIXTURE( CLFixture );
+// ========================================================
+
 BOOST_AUTO_TEST_SUITE(utils)
 
 BOOST_AUTO_TEST_CASE( stripExtension_test )
@@ -193,6 +208,31 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 BOOST_AUTO_TEST_SUITE_END()
 // ========================================================
 
+BOOST_AUTO_TEST_SUITE( cl_common_tests )
+
+BOOST_AUTO_TEST_CASE( halve_test )
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> d(0, 1);
+
+    // create random image
+    typedef HostImage<RGBA<float>, 2> image_type;
+    image_type image(256, 256);
+    std::generate(image.view().begin(), image.view().end(),
+                  [&]() { return d(gen); });
+
+    auto pendinginput = makePendingImage(clcontext, image);
+
+
+    image_type result(image.view().dimensions());
+}
+
+
+BOOST_AUTO_TEST_SUITE_END()
+// ========================================================
+
+
 BOOST_AUTO_TEST_SUITE( pyramid_tests )
 
 BOOST_AUTO_TEST_CASE( pyramid_views )
@@ -227,3 +267,4 @@ BOOST_AUTO_TEST_CASE( pyramid_views )
 
 BOOST_AUTO_TEST_SUITE_END()
 // ========================================================
+
