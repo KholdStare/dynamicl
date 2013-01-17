@@ -116,8 +116,8 @@ namespace DynamiCL
         }
 
         /**
-         * Process this image with the specified kernel, reusing the 
-         * specified image @a reuseImage for the result.
+         * Process this image with the specified kernel, creating a new
+         * image of specified dimensions for the result
          */
         PendingImage process(Kernel const& kernel,
                              std::array<size_t, N> const& dims,

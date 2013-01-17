@@ -17,15 +17,27 @@ typedef boost::mpl::list<int,long,unsigned char> pix_types;
 // TODO: uggggh have to handle manually
 struct CLFixture {
     ComputeContext clcontext;
-    cl::Program testkernels;
+    cl::Program testprogram;
+
+    static CLFixture const s_instance;
 
     CLFixture()  
         : clcontext(),
-          testkernels(buildProgram(clcontext.context, clcontext.device, "tests.cl"))
+          testprogram(buildProgram(clcontext.context, clcontext.device, "tests.cl"))
     {}
 };
 
-BOOST_GLOBAL_FIXTURE( CLFixture );
+const CLFixture CLFixture::s_instance;
+
+struct CLFixtureLocal {
+    ComputeContext const& clcontext;
+    cl::Program const& testprogram;
+
+    CLFixtureLocal() :
+        clcontext(CLFixture::s_instance.clcontext),
+        testprogram(CLFixture::s_instance.testprogram)
+    {}
+};
 // ========================================================
 
 BOOST_AUTO_TEST_SUITE(utils)
@@ -67,6 +79,18 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE( host_image )
 
+size_t alignment(void* ptr)
+{
+    unsigned long long val = ( unsigned long long )ptr;
+    size_t align = 1;
+    while ( (val & 1) == 0 )
+    {
+        align <<= 1;
+        val >>= 1;
+    }
+    return align;
+}
+
 BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
 {
     size_t width = 4;
@@ -74,6 +98,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
     HostImage<PixType, 2> image(width, height);
 
     BOOST_CHECK_EQUAL( image.valid(), true );
+    BOOST_CHECK_GE( alignment(image.view().rawData()), 256 );
     BOOST_CHECK_EQUAL( image.view().totalSize(), width*height );
     BOOST_CHECK_EQUAL( image.view().width(), width );
     BOOST_CHECK_EQUAL( image.view().height(), height );
@@ -102,6 +127,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
     BOOST_CHECK_EQUAL( image.view().valid(), false );
     BOOST_CHECK_EQUAL( image.view().totalSize(), 0 );
     BOOST_CHECK_EQUAL( moved.view().valid(), true );
+    BOOST_CHECK_GE( alignment(moved.view().rawData()), 256 );
     BOOST_CHECK_EQUAL( moved.view().totalSize(), width*height );
     BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
                                   moved.view().begin(), moved.view().end());
@@ -163,6 +189,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 
     BOOST_CHECK_EQUAL( imageArray.valid(), true );
     BOOST_CHECK_EQUAL( imageArray.view().totalSize(), total );
+    BOOST_CHECK_GE( alignment(imageArray.view().rawData()), 256 );
     BOOST_CHECK_EQUAL( imageArray.view().width(), width );
     BOOST_CHECK_EQUAL( imageArray.view().height(), height );
     BOOST_CHECK_EQUAL( imageArray.view().depth(), depth );
@@ -208,7 +235,15 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
 BOOST_AUTO_TEST_SUITE_END()
 // ========================================================
 
-BOOST_AUTO_TEST_SUITE( cl_common_tests )
+BOOST_FIXTURE_TEST_SUITE( cl_common_tests, CLFixtureLocal )
+
+bool operator == (RGBA<float> const& a, RGBA<float> const& b)
+{
+    return a.r == b.r
+        && a.g == b.g
+        && a.b == b.b
+        && a.a == b.a;
+}
 
 BOOST_AUTO_TEST_CASE( halve_test )
 {
@@ -217,15 +252,35 @@ BOOST_AUTO_TEST_CASE( halve_test )
     std::uniform_real_distribution<float> d(0, 1);
 
     // create random image
-    typedef HostImage<RGBA<float>, 2> image_type;
-    image_type image(256, 256);
+    typedef RGBA<float> pixel_type;
+    typedef HostImage<pixel_type, 2> image_type;
+    image_type image(2048, 2048);
     std::generate(image.view().begin(), image.view().end(),
-                  [&]() { return d(gen); });
+                  [&]() -> pixel_type { return {{d(gen), d(gen), d(gen), d(gen) }}; });
 
-    auto pendinginput = makePendingImage(clcontext, image);
-
+    auto pendinginput = makePendingImage<cl::Image2D>(clcontext, image.view());
 
     image_type result(image.view().dimensions());
+
+    Kernel halve = { testprogram, "halve_image", Kernel::Range::SOURCE };
+
+    // process input with halving kernel
+    pendinginput.process(halve).readInto(result.view().rawData());
+
+    // create vector of expected values
+    std::vector<pixel_type> expected;
+
+    std::transform(image.view().begin(), image.view().end(),
+                   std::back_inserter(expected),
+                   [](pixel_type const& pixel) -> pixel_type {
+                       return {{ pixel.r/2, pixel.g/2, pixel.b/2, pixel.a/2 }};
+                   });
+
+    for (size_t i = 0; i < result.view().totalSize(); ++i)
+    {
+        BOOST_REQUIRE( *(result.view().begin() + i) == expected[i] );
+    }
+
 }
 
 
