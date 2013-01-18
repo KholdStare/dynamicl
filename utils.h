@@ -97,6 +97,12 @@ namespace DynamiCL
             return *this;
         }
 
+        array_ptr& operator = (std::nullptr_t nullp)
+        {
+            dealloc();
+            return *this;
+        }
+
         array_ptr(array_ptr const& other) = delete;
         array_ptr& operator = (array_ptr const& other) = delete;
 

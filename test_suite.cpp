@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( image_array_construction, PixType, pix_types )
     std::vector< subimage_type > subimages;
 
     std::generate_n(std::back_inserter(subimages), depth,
-                    [&]() { return subimage_type(width, height); });
+                    [&]() ->subimage_type { return subimage_type(width, height); });
 
     // assert sizes
     for (auto&& image : subimages)

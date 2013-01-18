@@ -75,6 +75,11 @@ namespace DynamiCL
          * This resets the images in this group.
          */
         void mergeInto(view_type &);
+        void mergeInto(view_type&& view)
+        {
+            view_type v = std::move(view);
+            mergeInto(v);
+        }
 
     };
     

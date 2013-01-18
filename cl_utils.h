@@ -65,7 +65,7 @@ namespace DynamiCL
      * it inplace using an OpenCL kernel.
      */
     template <typename PixType, size_t N>
-    void processImageInPlace(HostImageView<PixType, N>& image,
+    void processImageInPlace(HostImageView<PixType, N>&& image,
                               Kernel const& kernel,
                               ComputeContext const& context)
     {

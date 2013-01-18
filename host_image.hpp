@@ -36,6 +36,18 @@ namespace DynamiCL
         component_type const& operator[]( size_t i ) const { return components[i]; }
     };
 
+    namespace detail
+    {
+
+        template <size_t N>
+        static size_t multDims(std::array<size_t, N> const& dims)
+        {
+            return std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
+        }
+
+    }
+
+
     // TODO: keep hostimage alive while references exist?
     /**
      * Represents a "View" onto a contiguous chunk of memory,
@@ -51,6 +63,8 @@ namespace DynamiCL
         // TODO: add assert once availble in gcc
         //static_assert( std::is_trivially_copyable<PixType>,
                         //"An image must consist of trivially copyable pixels." );
+                        
+        // TODO: can this be made constexpr?
 
     protected:
 
@@ -58,11 +72,6 @@ namespace DynamiCL
         {
             std::fill_n(dims_.begin(), N, 0);
             data_ = nullptr; // don't delete
-        }
-
-        static size_t multDims(std::array<size_t, N> const& dims)
-        {
-            return std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
         }
 
         std::array<size_t, N> dims_;
@@ -137,7 +146,7 @@ namespace DynamiCL
          */
         size_t totalSize() const
         {
-            return multDims(dims_);
+            return detail::multDims(dims_);
         }
 
         /**
@@ -180,8 +189,7 @@ namespace DynamiCL
             // calculate dimension of subimage
             std::array<size_t, N-1> dims;
             std::copy_n(dims_.begin(), N-1, dims.begin());
-            size_t subimageSize =
-                std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
+            size_t subimageSize = detail::multDims(dims);
 
             return HostImageView<PixType, N-1>(dims, data_ + (index*subimageSize));
         }
@@ -194,7 +202,7 @@ namespace DynamiCL
      * which can be accessed through a HostImageView.
      */
     template <typename PixType, size_t N>
-    class HostImage : private HostImageView<PixType, N>
+    class HostImage
     {
         static_assert( N >= 1, "An image has to have at least one dimension." );
         // TODO: add assert once availble in gcc
@@ -203,21 +211,26 @@ namespace DynamiCL
 
         // holds the data, while this object manages its lifetime.
         typedef HostImageView<PixType, N> view_type;
+        typedef std::array<size_t, N> dim_type;
 
         friend class HostImage<PixType, N-1>;
+        
+        void invalidate()
+        {
+            std::fill_n(dims_.begin(), N, 0);
+            alignedData_ = nullptr;
+        }
 
-        // TODO: don't inherit from View
+        // TODO: look into how to optimize returning a view
+        dim_type dims_;
         array_ptr<PixType, 256> alignedData_;
 
     public:
 
         HostImage(std::array<size_t, N> const& dims)
-            : view_type(dims, nullptr),
-              alignedData_(view_type::multDims(dims))
-        {
-            // set aligned ptr
-            view_type::data_ = alignedData_.ptr();
-        }
+            : dims_(dims),
+              alignedData_(detail::multDims(dims))
+        { }
 
         HostImage(size_t width, size_t height)
             : HostImage(std::array<size_t, 2>{{width, height}})
@@ -245,12 +258,11 @@ namespace DynamiCL
         HostImage(HostImage<PixType, N+1>&& toBeCollapsed)
         {
             // create colapsed dimensions
-            std::copy_n(toBeCollapsed.view().dimensions().begin(), N, view_type::dims_.begin());
-            view_type::dims_[N-1] *= toBeCollapsed.view().dimensions()[N];
+            std::copy_n(toBeCollapsed.view().dimensions().begin(), N, dims_.begin());
+            dims_[N-1] *= toBeCollapsed.view().dimensions()[N];
 
             // transfer image data
             alignedData_ = std::move(toBeCollapsed.alignedData_);
-            view_type::data_ = alignedData_.ptr();
             toBeCollapsed.invalidate();
         }
 
@@ -264,15 +276,18 @@ namespace DynamiCL
 
         // move constructor
         HostImage(HostImage&& other)
-            : view_type(std::move(other)),
+            : dims_(std::move(other.dims_)),
               alignedData_(std::move(other.alignedData_))
-        { }
+        {
+            other.invalidate();
+        }
 
         // move assignment
         HostImage& operator =(HostImage&& other)
         {
-            view_type::operator=(std::move(other));
+            dims_ = std::move(other.dims_);
             alignedData_ = std::move(other.alignedData_);
+            other.invalidate();
             return *this;
         }
 
@@ -281,7 +296,16 @@ namespace DynamiCL
          */
         bool valid()
         {
-            return view_type::valid();
+            // check dimensions
+            for (size_t n = 0; n < N; ++n)
+            {
+                if (dims_[n] == 0)
+                {
+                    return false;
+                }
+            }
+            // check nullptr
+            return alignedData_.ptr() != nullptr;
         }
 
         operator bool()
@@ -292,8 +316,16 @@ namespace DynamiCL
         /**
          * Return a view of the memory buffer.
          */
-        view_type& view() { return *this; }
-        view_type const& view() const { return *this; }
+        view_type view()
+        {
+            // TODO: minimize use of this
+            return view_type(dims_, alignedData_.ptr());
+        }
+
+        view_type const view() const
+        {
+            return view_type(dims_, alignedData_.ptr());
+        }
 
     };
 
@@ -302,17 +334,16 @@ namespace DynamiCL
     {
         assert(subimages.size() > 0);
 
-        view_type::dims_[N-1] = subimages.size();
+        dims_[N-1] = subimages.size();
 
         // copy the first image dimensions
         std::array<size_t, N-1> const& otherdims = subimages[0].dimensions();
-        std::copy(otherdims.begin(), otherdims.end(), view_type::dims_.begin());
+        std::copy(otherdims.begin(), otherdims.end(), dims_.begin());
 
         // can now allocate space
         // TODO: fix this to be aligned!!!
-        alignedData_ = array_ptr<PixType, 256>(view().totalSize());
-        view_type::data_ = alignedData_.ptr();
-        PixType* writePtr = view_type::data_; // current write point
+        alignedData_ = array_ptr<PixType, 256>(detail::multDims(dims_));
+        PixType* writePtr = alignedData_.begin(); // current write point
 
         typedef HostImageView<PixType, N-1> subimage_type;
         for(subimage_type const& subimage : subimages)
