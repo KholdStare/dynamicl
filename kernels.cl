@@ -222,6 +222,8 @@ inline float sigma_squared_rgb(float4 pixel)
 
 inline float well_exposedness(float4 pixel)
 {
+    // TODO looks like shit
+
     // 1961 paper "Acosine approximation to the normal distribution"
     // by D. H. Raab and E. H. Green, Psychometrika, Volume 26, pages 447-450
     float4 component_wise = 0.5f + cospi( 1.75f * (pixel - 0.5f) );
@@ -247,7 +249,7 @@ __constant const float discreet_laplacian[3][3] = {
     0.5f/6.f, 1.f/6.f, 0.5f/6.f
 };
 
-__kernel void compute_quality_laplacian(__read_only image2d_t input_image, __write_only image2d_t output_image)
+__kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
 
@@ -269,19 +271,19 @@ __kernel void compute_quality_laplacian(__read_only image2d_t input_image, __wri
 
     float4 pixel = read_imagef (input_image, g_sampler, coord);
 
-    //float sigma = sigma_squared_rgb(pixel);
-    //float exposedness = well_exposedness(pixel);
+    float sigma = sigma_squared_rgb(pixel);
+    float exposedness = well_exposedness_naive(pixel);
 
     // assign quality measure to alpha channel
     // TODO multiples are ad hoc. do better
-    pixel.s3 = ( laplacian_measure * 3.0f );
-    //         + ( sigma * 1.5f )
-    //         + ( exposedness * 0.2f );
+    pixel.s3 = ( laplacian_measure * 3.0f )
+             + ( sigma * 1.5f )
+             + ( exposedness * 0.2f );
 
     write_imagef (output_image, coord, pixel);
 }
 
-__kernel void compute_quality(__read_only image2d_t input_image, __write_only image2d_t output_image)
+__kernel void compute_quality_bal(__read_only image2d_t input_image, __write_only image2d_t output_image)
 {
     int2 coord = (int2)( get_global_id(0), get_global_id(1) );
     float4 pixel = read_imagef (input_image, g_sampler, coord);

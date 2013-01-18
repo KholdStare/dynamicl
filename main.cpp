@@ -104,26 +104,26 @@ namespace DynamiCL
         {
             Kernel quality = {program, "compute_quality", Kernel::Range::SOURCE};
 
-            //size_t width = 1;
-            //size_t height = 1;
+            size_t width = 1;
+            size_t height = 1;
             // TODO replace with move-aware optional
             std::unique_ptr<MergeGroup> group;
             while(cur != last)
             {
                 std::shared_ptr<FloatImage> in = *cur++;
 
-                //// determine pyramid depth if this is a first image received
-                //if (!group)
-                //{
-                    //width = in->view().width();
-                    //height = in->view().height();
+                // determine pyramid depth if this is a first image received
+                if (!group)
+                {
+                    width = in->view().width();
+                    height = in->view().height();
 
-                    //group.reset(new MergeGroup(context, program, width, height, 3));
-                //}
-                //// if subsequent images in sequence, check that sizes match
-                //else if (width != in->view().width() || height != in->view().height()) {
-                    //throw std::runtime_error("Image dimensions in sequence are not equal!");
-                //}
+                    group.reset(new MergeGroup(context, program, width, height, 3));
+                }
+                // if subsequent images in sequence, check that sizes match
+                else if (width != in->view().width() || height != in->view().height()) {
+                    throw std::runtime_error("Image dimensions in sequence are not equal!");
+                }
 
                 // create quality mask in image
                 // TODO: move this into merge group
@@ -134,22 +134,21 @@ namespace DynamiCL
                 processImageInPlace(in->view(), quality, context);
 
                 // add image to group
-                //group->addImage(in->view());
+                group->addImage(in->view());
 
-                //// as soon as we can merge, do so
-                //if (group->numImages() == 3)
-                //{
-                    //group->mergeInto(in->view());
+                // as soon as we can merge, do so
+                if (group->numImages() == 3)
+                {
+                    group->mergeInto(in->view());
 
                     std::cout << "========================\n"
                                  "HDR Merge complete.\n"
                                  "========================"
                               << std::endl;
-                    //*dest = std::make_shared<FloatImage>(std::move(collapsed));
                     *dest = in;
                     dest++;
                     std::cout << std::endl;
-                //}
+                }
 
             }
         }
