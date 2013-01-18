@@ -28,6 +28,9 @@ namespace DynamiCL
         }
 
     public:
+        typedef T* iterator;
+        typedef T const* const_iterator;
+
         array_ptr()
             : size_(0),
               array_(nullptr)
@@ -67,6 +70,12 @@ namespace DynamiCL
 
         size_t size() const { return size_; }
         T* ptr() const { return array_; }
+
+        const_iterator begin() const { return array_; }
+        const_iterator end()   const { return array_ + size_; }
+
+        iterator begin() { return array_; }
+        iterator end()   { return array_ + size_; }
 
     };
 

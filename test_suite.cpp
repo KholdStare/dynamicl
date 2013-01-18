@@ -14,7 +14,6 @@ using namespace DynamiCL;
 typedef boost::mpl::list<int,long,unsigned char> pix_types;
 
 // ========================================================
-// TODO: uggggh have to handle manually
 struct CLFixture {
     ComputeContext clcontext;
     cl::Program testprogram;
@@ -60,17 +59,32 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( array_ptr_tests, PixType, pix_types)
 {
     typedef array_ptr<PixType> array_type;
 
-    array_type a(50);
+    static size_t size = 512;
+    array_type a(size);
 
-    BOOST_CHECK_EQUAL( a.size(), 50 );
+    BOOST_CHECK_EQUAL( a.size(), size );
     BOOST_CHECK( a.ptr() != nullptr );
+
+    // generate random contents
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<unsigned char> d(0, 255);
+    std::vector<PixType> input;
+    std::generate_n(std::back_inserter(input), size, [&](){ return d(gen); } );
+    std::copy(input.begin(), input.end(), a.begin());
+
+    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
+                                  a.begin(), a.end());
 
     array_type b = std::move(a);
 
     BOOST_CHECK_EQUAL( a.size(), 0 );
     BOOST_CHECK( a.ptr() == nullptr );
-    BOOST_CHECK_EQUAL( b.size(), 50 );
+    BOOST_CHECK_EQUAL( b.size(), size );
     BOOST_CHECK( b.ptr() != nullptr );
+
+    BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
+                                  b.begin(), b.end());
 
 }
 
