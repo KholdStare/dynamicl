@@ -26,6 +26,9 @@ namespace DynamiCL
     template <typename T, std::size_t Align=std::alignment_of<T>::value>
     class array_ptr
     {
+
+        // TODO: add static assert to ensure Align is a power of 2
+
         size_t size_;
         char* unalignedData_;
         T* array_;
@@ -33,6 +36,7 @@ namespace DynamiCL
         void dealloc()
         {
             free(unalignedData_);
+            invalidate();
         }
 
         void invalidate()

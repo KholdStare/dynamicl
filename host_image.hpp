@@ -6,6 +6,9 @@
 #include <functional>
 #include <type_traits>
 #include <cassert>
+#include <memory>
+
+#include "utils.h"
 
 namespace DynamiCL
 {
@@ -201,41 +204,27 @@ namespace DynamiCL
         // holds the data, while this object manages its lifetime.
         typedef HostImageView<PixType, N> view_type;
 
-        void dealloc()
-        {
-            delete[] view_type::data_;
-        }
-
-        HostImage(std::array<size_t, N> const& dims, PixType* data)
-            : view_type(dims, data)
-        { }
-
-        /**
-         * Release the raw pointer to the pixel data.
-         *
-         * @note Please make sure to know the dimensions before invalidating
-         * this image and pulling out the data.
-         */
-        PixType* releaseData() {
-            PixType* result = view_type::data_;
-            view_type::invalidate();
-            return result;
-        }
-
         friend class HostImage<PixType, N-1>;
+
+        // TODO: don't inherit from View
+        array_ptr<PixType, 256> alignedData_;
 
     public:
 
         HostImage(std::array<size_t, N> const& dims)
-            : view_type(dims, new PixType[view_type::multDims(dims)])
-        { }
+            : view_type(dims, nullptr),
+              alignedData_(view_type::multDims(dims))
+        {
+            // set aligned ptr
+            view_type::data_ = alignedData_.ptr();
+        }
 
         HostImage(size_t width, size_t height)
-            : view_type({{width, height}}, new PixType[width*height])
+            : HostImage(std::array<size_t, 2>{{width, height}})
         { }
 
         HostImage(size_t width, size_t height, size_t depth)
-            : view_type({{width, height, depth}}, new PixType[width*height*depth])
+            : HostImage(std::array<size_t, 3>{{width, height, depth}})
         { }
 
         /**
@@ -260,15 +249,14 @@ namespace DynamiCL
             view_type::dims_[N-1] *= toBeCollapsed.view().dimensions()[N];
 
             // transfer image data
-            view_type::data_ = toBeCollapsed.releaseData();
+            alignedData_ = std::move(toBeCollapsed.alignedData_);
+            view_type::data_ = alignedData_.ptr();
+            toBeCollapsed.invalidate();
         }
 
-        ~HostImage() { dealloc(); }
+        ~HostImage() { }
 
-        HostImage()
-        { 
-            view_type::invalidate();
-        }
+        HostImage() { }
 
         // disable copying because expensive
         HostImage(HostImage const& other) = delete;
@@ -276,13 +264,15 @@ namespace DynamiCL
 
         // move constructor
         HostImage(HostImage&& other)
-            : view_type(std::move(other))
+            : view_type(std::move(other)),
+              alignedData_(std::move(other.alignedData_))
         { }
 
         // move assignment
         HostImage& operator =(HostImage&& other)
         {
             view_type::operator=(std::move(other));
+            alignedData_ = std::move(other.alignedData_);
             return *this;
         }
 
@@ -305,15 +295,6 @@ namespace DynamiCL
         view_type& view() { return *this; }
         view_type const& view() const { return *this; }
 
-        /**
-         * Return the amount of bytes an image of the 
-         * specified dimensions would occupy
-         */
-        static size_t calculateBytes(std::array<size_t, N> const& dims)
-        {
-            return view_type::multDims(dims) * sizeof(PixType);
-        }
-
     };
 
     template <typename PixType, size_t N>
@@ -328,7 +309,9 @@ namespace DynamiCL
         std::copy(otherdims.begin(), otherdims.end(), view_type::dims_.begin());
 
         // can now allocate space
-        view_type::data_ = new PixType[view().totalSize()];
+        // TODO: fix this to be aligned!!!
+        alignedData_ = array_ptr<PixType, 256>(view().totalSize());
+        view_type::data_ = alignedData_.ptr();
         PixType* writePtr = view_type::data_; // current write point
 
         typedef HostImageView<PixType, N-1> subimage_type;
