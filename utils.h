@@ -2,29 +2,58 @@
 #define DYNAMICL_UTILS_H_BF56AQKP
 
 #include <string>
+#include <type_traits>
 
 namespace DynamiCL
 {
     std::string stripExtension(std::string const& path);
 
+    namespace detail
+    {
+
+        template <typename T>
+        T* align_ptr(char* unaligned, size_t alignment)
+        {
+            return reinterpret_cast<T*>(alignment
+                                        + ((( unsigned long long )unaligned) & ~(alignment - 1)));
+        }
+
+    }
+
     /**
      * Manages heap allocated array
      */
-    template <typename T>
+    template <typename T, std::size_t Align=std::alignment_of<T>::value>
     class array_ptr
     {
         size_t size_;
+        char* unalignedData_;
         T* array_;
 
         void dealloc()
         {
-            delete[] array_;
+            free(unalignedData_);
         }
 
         void invalidate()
         {
             size_ = 0;
+            unalignedData_ = nullptr;
             array_ = nullptr;
+        }
+
+        /**
+         * Allocates enough memory to store @a n objects
+         * of type T, aligned to Align.
+         */
+        static char* malloc_enough(size_t n)
+        {
+            char* result = (char*)malloc(Align + n * sizeof(T) );
+            if (!result)
+            {
+                throw std::bad_alloc();
+            }
+            return result;
         }
 
     public:
@@ -33,16 +62,19 @@ namespace DynamiCL
 
         array_ptr()
             : size_(0),
+              unalignedData_(nullptr),
               array_(nullptr)
         { }
 
         array_ptr(size_t s)
             : size_(s),
-              array_(new T[s])
+              unalignedData_(malloc_enough(s)),
+              array_(detail::align_ptr<T>(unalignedData_, Align))
         { }
 
         array_ptr(array_ptr&& other)
             : size_(other.size_),
+              unalignedData_(other.unalignedData_),
               array_(other.array_)
         {
             other.invalidate();
@@ -53,6 +85,7 @@ namespace DynamiCL
             size_ = other.size_;
 
             dealloc();
+            unalignedData_ = other.unalignedData_;
             array_ = other.array_;
 
             other.invalidate();

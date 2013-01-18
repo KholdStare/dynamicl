@@ -11,9 +11,22 @@
 
 using namespace DynamiCL;
 
+// ========================================================
+// Typelists for templated tests
 typedef boost::mpl::list<int,long,unsigned char> pix_types;
 
+typedef boost::mpl::list<
+                std::integral_constant<size_t, 16>,
+                std::integral_constant<size_t, 32>,
+                std::integral_constant<size_t, 64>,
+                std::integral_constant<size_t, 128>,
+                std::integral_constant<size_t, 256>
+        > alignment_sizes;
+
 // ========================================================
+
+// Test fixtures
+
 struct CLFixture {
     ComputeContext clcontext;
     cl::Program testprogram;
@@ -38,6 +51,23 @@ struct CLFixtureLocal {
     {}
 };
 // ========================================================
+
+// Helper functions
+
+size_t alignment(void* ptr)
+{
+    unsigned long long val = ( unsigned long long )ptr;
+    size_t align = 1;
+    while ( (val & 1) == 0 )
+    {
+        align <<= 1;
+        val >>= 1;
+    }
+    return align;
+}
+
+// ========================================================
+
 
 BOOST_AUTO_TEST_SUITE(utils)
 
@@ -64,6 +94,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( array_ptr_tests, PixType, pix_types)
 
     BOOST_CHECK_EQUAL( a.size(), size );
     BOOST_CHECK( a.ptr() != nullptr );
+    PixType* data = a.ptr(); // save to compare later
 
     // generate random contents
     std::random_device rd;
@@ -81,10 +112,35 @@ BOOST_AUTO_TEST_CASE_TEMPLATE( array_ptr_tests, PixType, pix_types)
     BOOST_CHECK_EQUAL( a.size(), 0 );
     BOOST_CHECK( a.ptr() == nullptr );
     BOOST_CHECK_EQUAL( b.size(), size );
-    BOOST_CHECK( b.ptr() != nullptr );
+    BOOST_CHECK( b.ptr() == data );
 
     BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(),
                                   b.begin(), b.end());
+
+}
+
+BOOST_AUTO_TEST_CASE_TEMPLATE( array_ptr_alignment_tests, AlignConst, alignment_sizes)
+{
+    static constexpr size_t Align = AlignConst::value;
+    typedef unsigned char T;
+
+    typedef array_ptr<T, Align> array_type;
+
+    static size_t size = 50;
+    array_type a(size);
+
+    BOOST_CHECK_EQUAL( a.size(), size );
+    BOOST_CHECK_GE( alignment(a.ptr()), Align );
+    BOOST_CHECK( a.ptr() != nullptr );
+    T* data = a.ptr(); // save to compare later
+
+    array_type b = std::move(a);
+
+    BOOST_CHECK_EQUAL( a.size(), 0 );
+    BOOST_CHECK( a.ptr() == nullptr );
+    BOOST_CHECK_EQUAL( b.size(), size );
+    BOOST_CHECK_GE( alignment(b.ptr()), Align );
+    BOOST_CHECK( b.ptr() == data );
 
 }
 
@@ -92,18 +148,6 @@ BOOST_AUTO_TEST_SUITE_END()
 // ========================================================
 
 BOOST_AUTO_TEST_SUITE( host_image )
-
-size_t alignment(void* ptr)
-{
-    unsigned long long val = ( unsigned long long )ptr;
-    size_t align = 1;
-    while ( (val & 1) == 0 )
-    {
-        align <<= 1;
-        val >>= 1;
-    }
-    return align;
-}
 
 BOOST_AUTO_TEST_CASE_TEMPLATE( common_ops, PixType, pix_types)
 {
