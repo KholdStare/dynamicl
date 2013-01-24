@@ -1,0 +1,3 @@
+[submodule "plumbingplusplus"]
+	path = plumbingplusplus
+	url = git@github.com:KholdStare/plumbingplusplus.git
