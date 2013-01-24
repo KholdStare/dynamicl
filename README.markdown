@@ -3,6 +3,9 @@
 This is my attempt to write a fast HDR merge algorithm that runs on the GPU. It
 is currently in development, in the stages of optimization.
 
+![HDR example](https://github.com/KholdStare/dynamicl/raw/master/images/trafalgar-hdr.jpg)
+
+
 ## Features
 
 * Based on the Mertens-Kautz-Van Reeth exposure fusion algorithm
