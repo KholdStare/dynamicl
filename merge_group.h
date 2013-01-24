@@ -28,7 +28,7 @@ namespace DynamiCL
         size_t const pixelsPerPyramid_; ///< number of pixels for all levels of one pyramid
         size_t const groupSize_;
         // TODO: create single reusable arena
-        array_ptr<pixel_type> arena_; ///< memory arena for pyramid images
+        array_ptr<pixel_type, 256> arena_; ///< memory arena for pyramid images
 
         /**
          * Contiguous views of memory that represent an array of
